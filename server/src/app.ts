@@ -1,4 +1,5 @@
 import express from 'express';
+import type { ErrorRequestHandler } from 'express';
 import cors from 'cors';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -16,7 +17,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export function createApp() {
   const app = express();
 
-  app.use(cors());
+  // The frontend is always served from the same origin as this API (Vite's
+  // dev proxy locally, this same Express process in production) — no
+  // legitimate cross-origin caller exists, so this isn't a wildcard.
+  app.use(cors({ origin: process.env.PUBLIC_APP_URL || 'http://localhost:3000' }));
   app.use(express.json({ limit: '5mb' }));
 
   app.use('/api/auth', authRouter);
@@ -37,6 +41,16 @@ export function createApp() {
       res.sendFile(path.join(distDir, 'index.html'));
     });
   }
+
+  // Last-resort safety net: catches anything a route handler throws
+  // synchronously (Express 4 does this automatically) so a bug never leaks a
+  // stack trace to the client — logged server-side, generic JSON to the caller.
+  const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
+    console.error('Unhandled request error', err);
+    if (res.headersSent) return;
+    res.status(500).json({ error: 'internal_error' });
+  };
+  app.use(errorHandler);
 
   return app;
 }

@@ -67,6 +67,28 @@ describe('register / login / me', () => {
   });
 });
 
+describe('concurrent registration', () => {
+  it('does not crash when two requests race to register the same email — exactly one succeeds', async () => {
+    const email = 'race@example.com';
+    const attempts = await Promise.all(
+      Array.from({ length: 5 }, (_, i) =>
+        request(app)
+          .post('/api/auth/register')
+          .send({ email, password: 'password1', tournamentName: `Race ${i}` })
+      )
+    );
+    const succeeded = attempts.filter(r => r.status === 201);
+    const conflicted = attempts.filter(r => r.status === 409);
+    expect(succeeded).toHaveLength(1);
+    expect(conflicted).toHaveLength(4);
+    conflicted.forEach(r => expect(r.body.error).toBe('email_taken'));
+
+    // The server must still be responsive afterwards, not crashed.
+    const health = await request(app).get('/api/auth/me');
+    expect(health.status).toBe(401);
+  });
+});
+
 describe('tenant isolation', () => {
   it('one tournament cannot see or modify another tournament\'s data', async () => {
     const regA = await request(app)
