@@ -1,0 +1,7 @@
+{
+  "name": "BJJ RollMaster",
+  "description": "A stylish, professional-grade mini-app for Brazilian Jiu-Jitsu tournaments featuring a flexible round timer, a dedicated match scoreboard, and automated tournament bracket management.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
