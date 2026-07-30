@@ -31,7 +31,7 @@ test.describe('BJJ RollMaster', () => {
 
   test('unauthenticated visitor sees the login screen', async ({ page }) => {
     await page.goto('/');
-    await expect(page.locator('text=/Sign In|Вход/i').first()).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('text=/Welcome|Добро пожаловать/i').first()).toBeVisible({ timeout: 5000 });
   });
 
   test('display mode from URL works without login', async ({ page, request }) => {

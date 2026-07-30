@@ -14,10 +14,25 @@ import { api, publicApi, getSessionToken, setSessionToken, clearSessionToken, ty
 
 const DEFAULT_TIMER_CONFIG: TimerConfig = { roundDuration: 300, restDuration: 60, rounds: 1 };
 const POLL_INTERVAL_MS = 4000;
+const LANGUAGE_STORAGE_KEY = 'bjj_language';
+
+// Respects an explicit prior choice (stored on toggle); otherwise infers from
+// the browser/OS locale so a fresh visitor sees their own language, not
+// always Russian.
+function detectLanguage(): 'en' | 'ru' {
+  try {
+    const stored = localStorage.getItem(LANGUAGE_STORAGE_KEY);
+    if (stored === 'en' || stored === 'ru') return stored;
+  } catch {
+    /* localStorage unavailable */
+  }
+  const nav = (navigator.language || navigator.languages?.[0] || '').toLowerCase();
+  return nav.startsWith('ru') ? 'ru' : 'en';
+}
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<View>(View.DASHBOARD);
-  const [language, setLanguage] = useState<'en' | 'ru'>('ru');
+  const [language, setLanguage] = useState<'en' | 'ru'>(() => detectLanguage());
   const [competitors, setCompetitors] = useState<Competitor[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
   const [timerConfig, setTimerConfig] = useState<TimerConfig>(DEFAULT_TIMER_CONFIG);
@@ -35,7 +50,8 @@ const App: React.FC = () => {
   const isRegisterMode = urlParams.has('register');
   const resetToken = urlParams.get('resetToken');
   const publicSlug = urlParams.get('t') || '';
-  const displayLang = urlParams.get('lang') === 'en' ? 'en' : 'ru';
+  const urlLang = urlParams.get('lang');
+  const displayLang = urlLang === 'en' || urlLang === 'ru' ? urlLang : detectLanguage();
   const t = (isDisplayMode || isRegisterMode || (!authChecked || !tournament)) ? translations[displayLang] : translations[language];
 
   useEffect(() => {
@@ -458,7 +474,11 @@ const App: React.FC = () => {
           </button>
         </div>
         <div className="flex md:flex-col items-center gap-4">
-          <button onClick={() => setLanguage(l => l === 'en' ? 'ru' : 'en')} className="w-10 h-10 rounded-full border border-slate-800 flex items-center justify-center text-[10px] font-black text-slate-400 hover:text-white">{language.toUpperCase()}</button>
+          <button onClick={() => setLanguage(l => {
+            const next = l === 'en' ? 'ru' : 'en';
+            try { localStorage.setItem(LANGUAGE_STORAGE_KEY, next); } catch { /* ignore */ }
+            return next;
+          })} className="w-10 h-10 rounded-full border border-slate-800 flex items-center justify-center text-[10px] font-black text-slate-400 hover:text-white">{language.toUpperCase()}</button>
           <button onClick={() => setCurrentView(View.SETTINGS)} className={`p-3 rounded-xl transition-all ${currentView === View.SETTINGS ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-white hover:bg-slate-900'}`} title={t.settings}><Icons.Settings /></button>
         </div>
       </nav>

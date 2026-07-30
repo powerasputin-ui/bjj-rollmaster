@@ -1,7 +1,7 @@
 
 export const translations = {
   en: {
-    authLoginTitle: "Sign in",
+    authLoginTitle: "Welcome",
     authRegisterTitle: "Create your organizer account",
     authEmail: "Email",
     authPassword: "Password",
@@ -202,7 +202,7 @@ export const translations = {
     }
   },
   ru: {
-    authLoginTitle: "Вход",
+    authLoginTitle: "Добро пожаловать",
     authRegisterTitle: "Регистрация организатора",
     authEmail: "Email",
     authPassword: "Пароль",
