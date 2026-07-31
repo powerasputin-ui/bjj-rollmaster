@@ -111,91 +111,109 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ t, initialResetToken, onAuthent
   };
 
   const [logoError, setLogoError] = useState(false);
-  const inputClass = "w-full px-5 py-3 rounded-xl bg-white/10 text-white placeholder-gray-400 text-sm outline-none focus:ring-2 focus:ring-white/30 transition-shadow";
-  const primaryButtonClass = "w-full bg-white/10 text-white font-medium px-5 py-3 rounded-full shadow hover:bg-white/20 transition text-sm disabled:opacity-50";
+  const inputClass = "w-full bg-slate-950 border border-slate-800 text-white rounded-2xl p-5 font-black outline-none focus:border-indigo-500 transition-colors shadow-inner text-sm";
+  const labelClass = "text-[10px] font-black text-slate-600 uppercase tracking-widest ml-4";
+  const primaryButtonClass = "w-full py-5 rounded-2xl font-black uppercase text-xs tracking-[0.2em] transition-all bg-indigo-600 text-white shadow-xl hover:bg-indigo-500 active:scale-95 disabled:opacity-50";
 
   return (
     <div className="relative min-h-screen flex items-center justify-center p-6 bg-[#121212] overflow-hidden">
       <LiquidBackground />
-      <div className="relative z-10 w-full max-w-sm rounded-3xl bg-gradient-to-r from-[#ffffff10] to-[#121212] backdrop-blur-sm border border-white/10 shadow-2xl p-8 flex flex-col items-center">
-        <div className="flex items-center justify-center w-12 h-12 rounded-full bg-white/20 mb-6 shadow-lg overflow-hidden shrink-0">
+      <div className="relative z-10 w-full max-w-md bg-slate-900 border border-slate-800/80 rounded-[3rem] shadow-2xl p-10 flex flex-col items-center">
+        <div className="flex items-center justify-center w-14 h-14 rounded-2xl bg-indigo-600 mb-6 shadow-lg overflow-hidden shrink-0">
           {logoError ? (
-            <span className="font-black text-white text-sm">BJJ</span>
+            <span className="font-black text-white text-lg">BJJ</span>
           ) : (
             <img src="/logo.png" alt="Logo" className="w-full h-full object-contain" onError={() => setLogoError(true)} />
           )}
         </div>
 
-        <h1 className="text-2xl font-semibold text-white mb-6 text-center">
+        <h1 className="text-2xl font-black mb-6 text-white tracking-tight uppercase text-center">
           {mode === 'login' && t.authLoginTitle}
           {mode === 'register' && t.authRegisterTitle}
           {mode === 'forgot' && t.authForgotTitle}
           {mode === 'reset' && t.authResetTitle}
         </h1>
 
-        {mode === 'forgot' && <p className="text-gray-400 text-sm mb-6 text-center">{t.authForgotSub}</p>}
+        {mode === 'forgot' && <p className="text-slate-500 text-sm mb-6 text-center">{t.authForgotSub}</p>}
 
-        {error && <p className="mb-4 text-sm text-red-400 text-center w-full">{error}</p>}
-        {info && <p className="mb-4 text-sm text-emerald-400 text-center w-full">{info}</p>}
+        {error && <p className="mb-4 text-sm text-red-500 font-bold text-center w-full">{error}</p>}
+        {info && <p className="mb-4 text-sm text-emerald-500 font-bold text-center w-full">{info}</p>}
 
         {(mode === 'login' || mode === 'register') && (
-          <div className="flex flex-col w-full gap-4">
-            <div className="w-full flex flex-col gap-3">
-              <input placeholder={t.authEmail as string} type="email" value={email} onChange={e => setEmail(e.target.value)} className={inputClass} />
-              <input placeholder={t.authPassword as string} type="password" value={password} onChange={e => setPassword(e.target.value)} className={inputClass} />
+          <div className="flex flex-col w-full gap-6">
+            <div className="w-full flex flex-col gap-4">
+              <div className="space-y-2">
+                <label className={labelClass}>{t.authEmail}</label>
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)} className={inputClass} />
+              </div>
+              <div className="space-y-2">
+                <label className={labelClass}>{t.authPassword}</label>
+                <input type="password" value={password} onChange={e => setPassword(e.target.value)} className={inputClass} />
+              </div>
               {mode === 'login' && (
                 <div className="text-right">
-                  <button onClick={() => { setMode('forgot'); setError(null); setInfo(null); }} className="text-xs font-medium text-gray-400 hover:text-white">
+                  <button onClick={() => { setMode('forgot'); setError(null); setInfo(null); }} className="text-[11px] font-bold text-indigo-400 hover:text-white uppercase tracking-widest">
                     {t.authForgotPasswordLink}
                   </button>
                 </div>
               )}
             </div>
 
-            <hr className="opacity-10" />
+            <button disabled={loading} onClick={mode === 'login' ? submitLogin : submitRegister} className={primaryButtonClass}>
+              {mode === 'login' ? t.authLoginButton : t.authRegisterButton}
+            </button>
+
+            <div className="flex items-center gap-4">
+              <div className="flex-1 h-px bg-slate-800" />
+              <span className="text-[10px] font-black text-slate-600 uppercase">{t.authOr}</span>
+              <div className="flex-1 h-px bg-slate-800" />
+            </div>
 
             <div>
-              <button disabled={loading} onClick={mode === 'login' ? submitLogin : submitRegister} className={`${primaryButtonClass} mb-3`}>
-                {mode === 'login' ? t.authLoginButton : t.authRegisterButton}
-              </button>
-
-              <div className="w-full rounded-full overflow-hidden shadow bg-gradient-to-b from-[#232526] to-[#2d2e30] mb-2" ref={googleBtnRef} />
+              <div className="w-full rounded-full overflow-hidden shadow-xl" ref={googleBtnRef} />
               {!import.meta.env.VITE_GOOGLE_CLIENT_ID && (
-                <p className="text-center text-[10px] text-gray-500 uppercase tracking-widest mb-2">{t.authGoogleUnavailable}</p>
+                <p className="text-center text-[10px] text-slate-700 uppercase tracking-widest mt-2">{t.authGoogleUnavailable}</p>
               )}
-
-              <div className="w-full text-center mt-2">
-                <span className="text-xs text-gray-400">
-                  {mode === 'login' ? t.authSwitchToRegisterPrompt : t.authSwitchToLoginPrompt}{' '}
-                  <button onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError(null); setInfo(null); }} className="underline text-white/80 hover:text-white">
-                    {mode === 'login' ? t.authSwitchToRegister : t.authSwitchToLogin}
-                  </button>
-                </span>
-              </div>
             </div>
+
+            <p className="text-center text-xs text-slate-500">
+              {mode === 'login' ? t.authSwitchToRegisterPrompt : t.authSwitchToLoginPrompt}{' '}
+              <button onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError(null); setInfo(null); }} className="text-indigo-400 hover:text-white font-bold">
+                {mode === 'login' ? t.authSwitchToRegister : t.authSwitchToLogin}
+              </button>
+            </p>
           </div>
         )}
 
         {mode === 'forgot' && (
-          <div className="flex flex-col w-full gap-4">
-            <input placeholder={t.authEmail as string} type="email" value={email} onChange={e => setEmail(e.target.value)} className={inputClass} />
+          <div className="flex flex-col w-full gap-6">
+            <div className="space-y-2">
+              <label className={labelClass}>{t.authEmail}</label>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} className={inputClass} />
+            </div>
             <button disabled={loading} onClick={submitForgot} className={primaryButtonClass}>
               {t.authForgotSubmit}
             </button>
-            <button onClick={() => { setMode('login'); setError(null); setInfo(null); }} className="w-full text-center text-xs text-gray-400 hover:text-white font-medium">
+            <button onClick={() => { setMode('login'); setError(null); setInfo(null); }} className="w-full text-center text-xs text-slate-500 hover:text-white font-bold uppercase tracking-widest">
               {t.authBackToLogin}
             </button>
           </div>
         )}
 
         {mode === 'reset' && (
-          <div className="flex flex-col w-full gap-4">
-            <input placeholder={t.authResetNewPassword as string} type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} className={inputClass} />
-            <input placeholder={t.authResetConfirmPassword as string} type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} className={inputClass} />
+          <div className="flex flex-col w-full gap-6">
+            <div className="space-y-2">
+              <label className={labelClass}>{t.authResetNewPassword}</label>
+              <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} className={inputClass} />
+            </div>
+            <div className="space-y-2">
+              <label className={labelClass}>{t.authResetConfirmPassword}</label>
+              <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} className={inputClass} />
+            </div>
             <button disabled={loading} onClick={submitReset} className={primaryButtonClass}>
               {t.authResetSubmit}
             </button>
-            <button onClick={() => { setMode('login'); setError(null); setInfo(null); }} className="w-full text-center text-xs text-gray-400 hover:text-white font-medium">
+            <button onClick={() => { setMode('login'); setError(null); setInfo(null); }} className="w-full text-center text-xs text-slate-500 hover:text-white font-bold uppercase tracking-widest">
               {t.authBackToLogin}
             </button>
           </div>
