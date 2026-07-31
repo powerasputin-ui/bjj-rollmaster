@@ -27,6 +27,11 @@ describe('creating and listing tournaments', () => {
     expect(res.body.tournament.name).toBe('Spring Open');
     expect(res.body.tournament.slug).toBeTruthy();
     expect(res.body.tournament.status).toBe('draft');
+
+    // Default weight categories are seeded alongside the tournament, same as timer_config.
+    const categories = await request(app).get('/api/weight-categories').set({ Authorization: `Bearer ${res.body.token}` });
+    expect(categories.status).toBe(200);
+    expect(categories.body).toHaveLength(14);
   });
 
   it('creates a second tournament with full details for the same account', async () => {
@@ -91,6 +96,86 @@ describe('selecting and editing a tournament', () => {
   });
 });
 
+describe('default bracket format', () => {
+  it('defaults to single when not specified', async () => {
+    const res = await request(app).post('/api/tournaments').set({ Authorization: `Bearer ${userToken}` }).send({ name: 'Format Default Test' });
+    expect(res.status).toBe(201);
+    expect(res.body.tournament.defaultBracketFormat).toBe('single');
+  });
+
+  it('accepts an explicit defaultBracketFormat on create', async () => {
+    const res = await request(app)
+      .post('/api/tournaments')
+      .set({ Authorization: `Bearer ${userToken}` })
+      .send({ name: 'Format Explicit Test', defaultBracketFormat: 'round_robin' });
+    expect(res.status).toBe(201);
+    expect(res.body.tournament.defaultBracketFormat).toBe('round_robin');
+  });
+
+  it('rejects an invalid defaultBracketFormat on create', async () => {
+    const res = await request(app)
+      .post('/api/tournaments')
+      .set({ Authorization: `Bearer ${userToken}` })
+      .send({ name: 'Format Invalid Test', defaultBracketFormat: 'bogus' });
+    expect(res.status).toBe(400);
+  });
+
+  it('changes defaultBracketFormat via PATCH', async () => {
+    const created = await request(app)
+      .post('/api/tournaments')
+      .set({ Authorization: `Bearer ${userToken}` })
+      .send({ name: 'Format Patch Test' });
+    const id = created.body.tournament.id;
+
+    const patch = await request(app)
+      .patch(`/api/tournaments/${id}`)
+      .set({ Authorization: `Bearer ${userToken}` })
+      .send({ defaultBracketFormat: 'double' });
+    expect(patch.status).toBe(200);
+    expect(patch.body.defaultBracketFormat).toBe('double');
+  });
+});
+
+describe('sparring format (gi/no-gi)', () => {
+  it('defaults to gi when not specified', async () => {
+    const res = await request(app).post('/api/tournaments').set({ Authorization: `Bearer ${userToken}` }).send({ name: 'Sparring Default Test' });
+    expect(res.status).toBe(201);
+    expect(res.body.tournament.sparringFormat).toBe('gi');
+  });
+
+  it('accepts an explicit sparringFormat on create', async () => {
+    const res = await request(app)
+      .post('/api/tournaments')
+      .set({ Authorization: `Bearer ${userToken}` })
+      .send({ name: 'Sparring Explicit Test', sparringFormat: 'both' });
+    expect(res.status).toBe(201);
+    expect(res.body.tournament.sparringFormat).toBe('both');
+  });
+
+  it('rejects an invalid sparringFormat on create', async () => {
+    const res = await request(app)
+      .post('/api/tournaments')
+      .set({ Authorization: `Bearer ${userToken}` })
+      .send({ name: 'Sparring Invalid Test', sparringFormat: 'bogus' });
+    expect(res.status).toBe(400);
+  });
+
+  it('changes sparringFormat via PATCH', async () => {
+    const created = await request(app)
+      .post('/api/tournaments')
+      .set({ Authorization: `Bearer ${userToken}` })
+      .send({ name: 'Sparring Patch Test' });
+    const id = created.body.tournament.id;
+
+    const patch = await request(app)
+      .patch(`/api/tournaments/${id}`)
+      .set({ Authorization: `Bearer ${userToken}` })
+      .send({ sparringFormat: 'nogi' });
+    expect(patch.status).toBe(200);
+    expect(patch.body.sparringFormat).toBe('nogi');
+  });
+});
+
 describe('public catalog', () => {
   it('lists only published tournaments, not drafts', async () => {
     const res = await request(app).get('/api/public/tournaments');
@@ -98,5 +183,30 @@ describe('public catalog', () => {
     const names = res.body.map((t: { name: string }) => t.name);
     expect(names).toContain('Spring Open');
     expect(names).not.toContain('Summer Cup');
+  });
+
+  it('GET /api/public/:slug returns the tournament name without auth, works regardless of draft/published status', async () => {
+    const list = await request(app).get('/api/tournaments').set({ Authorization: `Bearer ${userToken}` });
+    const summerCup = list.body.find((t: { name: string }) => t.name === 'Summer Cup');
+
+    const res = await request(app).get(`/api/public/${summerCup.slug}`);
+    expect(res.status).toBe(200);
+    expect(res.body.name).toBe('Summer Cup');
+  });
+
+  it('GET /api/public/:slug/weight-categories returns the seeded defaults without auth', async () => {
+    const list = await request(app).get('/api/tournaments').set({ Authorization: `Bearer ${userToken}` });
+    const springOpen = list.body.find((t: { name: string }) => t.name === 'Spring Open');
+
+    const res = await request(app).get(`/api/public/${springOpen.slug}/weight-categories`);
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(14);
+  });
+
+  it('404s on both public routes for an unknown slug', async () => {
+    const info = await request(app).get('/api/public/no-such-tournament');
+    expect(info.status).toBe(404);
+    const categories = await request(app).get('/api/public/no-such-tournament/weight-categories');
+    expect(categories.status).toBe(404);
   });
 });

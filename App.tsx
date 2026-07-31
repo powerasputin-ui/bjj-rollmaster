@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Competitor, Match, TimerConfig, Score, MatchEvent } from './types';
+import { View, Competitor, Match, TimerConfig, Score, MatchEvent, WeightCategory, AgeCategory } from './types';
 import { Icons } from './constants';
 import Timer from './components/Timer';
 import TournamentManager, { RosterFilterRequest } from './components/TournamentManager';
@@ -11,6 +11,15 @@ import PendingRegistrations from './components/PendingRegistrations';
 import AuthScreen from './components/AuthScreen';
 import TournamentsHub from './components/TournamentsHub';
 import PublicCatalog from './components/PublicCatalog';
+import AthleteCabinet from './components/AthleteCabinet';
+import WeightCategoriesSettings from './components/WeightCategoriesSettings';
+import AgeCategoriesSettings from './components/AgeCategoriesSettings';
+import PublicBrackets from './components/PublicBrackets';
+import MatOperatorConsole from './components/MatOperatorConsole';
+import TeamStandings from './components/TeamStandings';
+import ResultsExport from './components/ResultsExport';
+import MatsOverview from './components/MatsOverview';
+import QRCode from 'qrcode';
 import { translations } from './translations';
 import {
   api, publicApi,
@@ -44,9 +53,14 @@ const App: React.FC = () => {
   const [matches, setMatches] = useState<Match[]>([]);
   const [timerConfig, setTimerConfig] = useState<TimerConfig>(DEFAULT_TIMER_CONFIG);
   const [pendingRegistrations, setPendingRegistrations] = useState<Competitor[]>([]);
+  const [weightCategories, setWeightCategories] = useState<WeightCategory[]>([]);
+  const [ageCategories, setAgeCategories] = useState<AgeCategory[]>([]);
   const [logoError, setLogoError] = useState(false);
   const [rosterFilterRequest, setRosterFilterRequest] = useState<RosterFilterRequest | null>(null);
   const [copiedFlash, setCopiedFlash] = useState(false);
+  const [registerQrDataUrl, setRegisterQrDataUrl] = useState<string | null>(null);
+  const [matLinks, setMatLinks] = useState<Record<string, string>>({});
+  const [matLinkCopiedFlash, setMatLinkCopiedFlash] = useState<string | null>(null);
 
   const [tournament, setTournament] = useState<TournamentInfo | null>(null);
   const [hasUserToken, setHasUserToken] = useState(false);
@@ -59,10 +73,17 @@ const App: React.FC = () => {
   const isRegisterMode = urlParams.has('register');
   const resetToken = urlParams.get('resetToken');
   const isLoginMode = urlParams.has('login') || !!resetToken;
+  const confirmEmailToken = urlParams.get('confirmEmail') || undefined;
+  const athleteLoginToken = urlParams.get('athleteLogin') || undefined;
+  const isCabinetMode = urlParams.has('cabinet') || !!confirmEmailToken || !!athleteLoginToken;
+  const isLiveMode = urlParams.has('live');
+  const isOperatorMode = urlParams.has('operator');
+  const operatorMat = urlParams.get('mat') || '';
+  const operatorToken = urlParams.get('opToken') || '';
   const publicSlug = urlParams.get('t') || '';
   const urlLang = urlParams.get('lang');
   const displayLang = urlLang === 'en' || urlLang === 'ru' ? urlLang : detectLanguage();
-  const t = (isDisplayMode || isRegisterMode || (!authChecked || !hasUserToken || !tournament)) ? translations[displayLang] : translations[language];
+  const t = (isDisplayMode || isRegisterMode || isCabinetMode || isLiveMode || isOperatorMode || (!authChecked || !hasUserToken || !tournament)) ? translations[displayLang] : translations[language];
 
   useEffect(() => {
     if (isDisplayMode) setCurrentView(View.TIMER);
@@ -74,7 +95,7 @@ const App: React.FC = () => {
   // tournament session-token also exists from a prior visit — its details are
   // fetched too, so a reload doesn't dump the organizer back into the hub.
   useEffect(() => {
-    if (isRegisterMode || isDisplayMode) {
+    if (isRegisterMode || isDisplayMode || isCabinetMode || isLiveMode || isOperatorMode) {
       setAuthChecked(true);
       return;
     }
@@ -101,25 +122,29 @@ const App: React.FC = () => {
       }
       setAuthChecked(true);
     })();
-  }, [isRegisterMode, isDisplayMode]);
+  }, [isRegisterMode, isDisplayMode, isCabinetMode, isLiveMode, isOperatorMode]);
 
   // Authenticated organizer data — polls the session-scoped REST API.
   useEffect(() => {
-    if (isRegisterMode || isDisplayMode || !tournament) return;
+    if (isRegisterMode || isDisplayMode || isCabinetMode || isLiveMode || isOperatorMode || !tournament) return;
 
     let cancelled = false;
     const load = async () => {
-      const [compRes, matchRes, timerRes, pendingRes] = await Promise.all([
+      const [compRes, matchRes, timerRes, pendingRes, weightCatRes, ageCatRes] = await Promise.all([
         api.getCompetitors(),
         api.getMatches(),
         api.getTimerConfig(),
         api.getPendingRegistrations(),
+        api.getWeightCategories(),
+        api.getAgeCategories(),
       ]);
       if (cancelled) return;
       if (compRes.ok) setCompetitors(compRes.data);
       if (matchRes.ok) setMatches(matchRes.data);
       if (timerRes.ok) setTimerConfig(timerRes.data);
       if (pendingRes.ok) setPendingRegistrations(pendingRes.data);
+      if (weightCatRes.ok) setWeightCategories(weightCatRes.data);
+      if (ageCatRes.ok) setAgeCategories(ageCatRes.data);
     };
 
     load();
@@ -149,6 +174,18 @@ const App: React.FC = () => {
     return () => { cancelled = true; clearInterval(interval); };
   }, [isDisplayMode, publicSlug]);
 
+  // QR code for the athlete registration link — handy to print/display at the venue.
+  useEffect(() => {
+    if (!tournament) {
+      setRegisterQrDataUrl(null);
+      return;
+    }
+    const url = `${window.location.origin}/?register=true&t=${tournament.slug}`;
+    QRCode.toDataURL(url, { margin: 1, width: 200 })
+      .then(setRegisterQrDataUrl)
+      .catch(() => setRegisterQrDataUrl(null));
+  }, [tournament]);
+
   const handleAuthenticated = async (token: string) => {
     setUserToken(token);
     setHasUserToken(true);
@@ -168,6 +205,7 @@ const App: React.FC = () => {
     setMatches([]);
     setTimerConfig(DEFAULT_TIMER_CONFIG);
     setPendingRegistrations([]);
+    setWeightCategories([]);
     setCurrentView(View.DASHBOARD);
   };
 
@@ -183,6 +221,27 @@ const App: React.FC = () => {
     navigator.clipboard?.writeText(url).then(() => {
       setCopiedFlash(true);
       setTimeout(() => setCopiedFlash(false), 2000);
+    });
+  };
+
+  const generateMatLink = (mat: string) => {
+    if (!tournament) return;
+    api.generateMatToken(mat).then(res => {
+      if (res.ok === true) {
+        const url = `${window.location.origin}/?operator=true&t=${tournament.slug}&mat=${mat}&opToken=${res.data.token}`;
+        setMatLinks(prev => ({ ...prev, [mat]: url }));
+      } else {
+        alert(t.adminTokenInvalid);
+      }
+    });
+  };
+
+  const copyMatLink = (mat: string) => {
+    const url = matLinks[mat];
+    if (!url) return;
+    navigator.clipboard?.writeText(url).then(() => {
+      setMatLinkCopiedFlash(mat);
+      setTimeout(() => setMatLinkCopiedFlash(null), 2000);
     });
   };
 
@@ -340,6 +399,24 @@ const App: React.FC = () => {
     window.location.reload();
   };
 
+  // Athlete cabinet — magic-link sign-in (`?cabinet=true`), or a landing from
+  // an emailed link (`?confirmEmail=<token>` / `?athleteLogin=<token>`).
+  if (isCabinetMode) {
+    return <AthleteCabinet t={t} confirmToken={confirmEmailToken} loginToken={athleteLoginToken} />;
+  }
+
+  // Public spectator brackets — read-only, no login, reachable via a shared
+  // link from the catalog or shared directly by the organizer.
+  if (isLiveMode) {
+    return <PublicBrackets t={t} slug={publicSlug} />;
+  }
+
+  // Mat referee/scorekeeper console — locked to one mat, reachable via a
+  // short-lived link the organizer generates in Settings.
+  if (isOperatorMode) {
+    return <MatOperatorConsole t={t} slug={publicSlug} mat={operatorMat} opToken={operatorToken} />;
+  }
+
   // Public self-registration page — no nav, no roster/match data, reachable via a
   // shared link/QR code at the venue. Without a specific tournament slug, fall
   // back to the public catalog so the athlete can find one first.
@@ -392,9 +469,12 @@ const App: React.FC = () => {
     switch (currentView) {
       case View.DASHBOARD: return <Dashboard competitors={competitors} matches={matches} t={t} onSelectBelt={(belt, ageGroup) => { setRosterFilterRequest({ belt, ageGroup }); setCurrentView(View.TOURNAMENT); }} />;
       case View.TIMER: return <Timer config={timerConfig} setConfig={setTimerConfig} isDisplayOnly={isDisplayMode} t={t} language={language} matches={matches} competitors={competitors} onFinishMatch={onFinishMatchFromTimer} tournamentSlug={tournament?.slug} />;
-      case View.TOURNAMENT: return <TournamentManager competitors={competitors} setCompetitors={setCompetitors} matches={matches} setMatches={setMatches} t={t} filterRequest={rosterFilterRequest} onFilterRequestApplied={() => setRosterFilterRequest(null)} />;
-      case View.BRACKETS: return <BracketView competitors={competitors} matches={matches} setMatches={setMatches} setCompetitors={setCompetitors} t={t} onCallToMat={onCallToMat} />;
+      case View.TOURNAMENT: return <TournamentManager competitors={competitors} setCompetitors={setCompetitors} matches={matches} setMatches={setMatches} weightCategories={weightCategories} ageCategories={ageCategories} t={t} filterRequest={rosterFilterRequest} onFilterRequestApplied={() => setRosterFilterRequest(null)} sparringFormat={tournament?.sparringFormat} />;
+      case View.BRACKETS: return <BracketView competitors={competitors} matches={matches} setMatches={setMatches} setCompetitors={setCompetitors} weightCategories={weightCategories} ageCategories={ageCategories} t={t} onCallToMat={onCallToMat} defaultBracketFormat={tournament?.defaultBracketFormat} sparringFormat={tournament?.sparringFormat} />;
       case View.PENDING: return <PendingRegistrations t={t} pending={pendingRegistrations} onApprove={handleApproveRegistration} onReject={handleRejectRegistration} />;
+      case View.TEAMS: return <TeamStandings competitors={competitors} matches={matches} t={t} />;
+      case View.RESULTS: return <ResultsExport competitors={competitors} matches={matches} weightCategories={weightCategories} ageCategories={ageCategories} t={t} />;
+      case View.MATS: return <MatsOverview competitors={competitors} matches={matches} t={t} />;
       case View.SETTINGS:
         return (
           <div className="p-8 max-w-4xl mx-auto space-y-8 animate-in fade-in duration-500">
@@ -435,6 +515,9 @@ const App: React.FC = () => {
               </div>
             </section>
 
+            <WeightCategoriesSettings weightCategories={weightCategories} setWeightCategories={setWeightCategories} competitors={competitors} t={t} />
+            <AgeCategoriesSettings ageCategories={ageCategories} setAgeCategories={setAgeCategories} competitors={competitors} t={t} />
+
             <section className="bg-slate-900/50 border border-slate-800 rounded-3xl p-8">
               <h3 className="text-sm font-black uppercase text-slate-500 mb-6 tracking-widest">{t.authAccount}</h3>
               {userEmail && <p className="text-white font-bold mb-1">{userEmail}</p>}
@@ -452,15 +535,46 @@ const App: React.FC = () => {
             <section className="bg-slate-900/50 border border-slate-800 rounded-3xl p-8">
               <h3 className="text-sm font-black uppercase text-slate-500 mb-2 tracking-widest">{t.authShareLinkTitle}</h3>
               <p className="text-[10px] text-slate-500 mb-4">{t.authShareLinkSub}</p>
-              <div className="flex gap-3">
-                <input
-                  readOnly
-                  value={`${window.location.origin}/?register=true&t=${tournament.slug}`}
-                  className="flex-1 bg-slate-950 border border-slate-800 text-white rounded-xl p-4 font-bold outline-none text-xs"
-                />
-                <button onClick={copyRegisterLink} className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 rounded-xl font-black uppercase text-xs tracking-widest transition-all active:scale-95 shrink-0">
-                  {copiedFlash ? t.authCopiedLink : t.authCopyLink}
-                </button>
+              <div className="flex flex-col md:flex-row gap-6 items-start">
+                <div className="flex-1 w-full space-y-3">
+                  <div className="flex gap-3">
+                    <input
+                      readOnly
+                      value={`${window.location.origin}/?register=true&t=${tournament.slug}`}
+                      className="flex-1 bg-slate-950 border border-slate-800 text-white rounded-xl p-4 font-bold outline-none text-xs"
+                    />
+                    <button onClick={copyRegisterLink} className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 rounded-xl font-black uppercase text-xs tracking-widest transition-all active:scale-95 shrink-0">
+                      {copiedFlash ? t.authCopiedLink : t.authCopyLink}
+                    </button>
+                  </div>
+                </div>
+                {registerQrDataUrl && (
+                  <img src={registerQrDataUrl} alt="QR" className="w-28 h-28 rounded-xl border border-slate-800 shrink-0 bg-white p-1" />
+                )}
+              </div>
+            </section>
+
+            <section className="bg-slate-900/50 border border-slate-800 rounded-3xl p-8">
+              <h3 className="text-sm font-black uppercase text-slate-500 mb-2 tracking-widest">{t.matOperatorLinksTitle}</h3>
+              <p className="text-[10px] text-slate-500 mb-4">{t.matOperatorLinksSub}</p>
+              <div className="space-y-3">
+                {['1', '2', '3', '4', '5'].map(mat => (
+                  <div key={mat} className="flex gap-3 items-center">
+                    <span className="text-xs font-black text-slate-500 uppercase w-16 shrink-0">{t.mat} {mat}</span>
+                    {matLinks[mat] ? (
+                      <>
+                        <input readOnly value={matLinks[mat]} className="flex-1 bg-slate-950 border border-slate-800 text-white rounded-xl p-4 font-bold outline-none text-xs" />
+                        <button onClick={() => copyMatLink(mat)} className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 rounded-xl font-black uppercase text-xs tracking-widest transition-all active:scale-95 shrink-0 py-4">
+                          {matLinkCopiedFlash === mat ? t.authCopiedLink : t.authCopyLink}
+                        </button>
+                      </>
+                    ) : (
+                      <button onClick={() => generateMatLink(mat)} className="bg-slate-800 hover:bg-slate-700 text-white px-6 py-4 rounded-xl font-black uppercase text-xs tracking-widest transition-all active:scale-95">
+                        {t.generateLinkButton}
+                      </button>
+                    )}
+                  </div>
+                ))}
               </div>
             </section>
 
@@ -502,7 +616,7 @@ const App: React.FC = () => {
 
   return (
     <div className="h-screen max-h-[100dvh] bjj-gradient flex flex-col md:flex-row overflow-hidden">
-      <nav className="w-full md:w-20 lg:w-24 bg-slate-950 border-r border-slate-800 flex md:flex-col items-center justify-between p-4 md:py-8 z-50">
+      <nav className="print:hidden w-full md:w-20 lg:w-24 bg-slate-950 border-r border-slate-800 flex md:flex-col items-center justify-between p-4 md:py-8 z-50">
         <div className="flex md:flex-col items-center gap-6">
           <div
             className="w-14 h-14 md:w-12 md:h-12 rounded-2xl flex items-center justify-center shadow-lg cursor-pointer overflow-hidden bg-indigo-600 shrink-0"
@@ -525,6 +639,7 @@ const App: React.FC = () => {
           <button onClick={() => setCurrentView(View.BRACKETS)} className={`p-3 rounded-xl transition-all ${currentView === View.BRACKETS ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-white hover:bg-slate-900'}`} title={t.brackets}>
             <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7" /></svg>
           </button>
+          <button onClick={() => setCurrentView(View.MATS)} className={`p-3 rounded-xl transition-all ${currentView === View.MATS ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-white hover:bg-slate-900'}`} title={t.matsOverviewTitle}><Icons.Grid /></button>
           <button onClick={() => setCurrentView(View.PENDING)} className={`relative p-3 rounded-xl transition-all ${currentView === View.PENDING ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-white hover:bg-slate-900'}`} title={t.requests}>
             <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
             {pendingRegistrations.length > 0 && (
@@ -533,6 +648,8 @@ const App: React.FC = () => {
               </span>
             )}
           </button>
+          <button onClick={() => setCurrentView(View.TEAMS)} className={`p-3 rounded-xl transition-all ${currentView === View.TEAMS ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-white hover:bg-slate-900'}`} title={t.teamStandings}><Icons.Medal /></button>
+          <button onClick={() => setCurrentView(View.RESULTS)} className={`p-3 rounded-xl transition-all ${currentView === View.RESULTS ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 hover:text-white hover:bg-slate-900'}`} title={t.resultsTitle}><Icons.Document /></button>
         </div>
         <div className="flex md:flex-col items-center gap-4">
           <button onClick={() => setLanguage(l => {

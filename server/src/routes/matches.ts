@@ -1,18 +1,18 @@
 import { Router } from 'express';
 import { getDb, rowToMatch } from '../db/client.js';
 import { requireAuth } from '../middleware/requireAuth.js';
+import { requireAuthOrMat } from '../middleware/requireAuthOrMat.js';
 import { isValidMatch } from '../validation.js';
+import { broadcastMatchCalled } from '../ws/matSync.js';
 import type { Match, MatchEvent, Score } from '../types.js';
 
 export const matchesRouter = Router();
 
-matchesRouter.use(requireAuth);
-
 function insertMatch(m: Match, tournamentId: string): void {
   getDb()
     .prepare(
-      `INSERT INTO matches (id, tournament_id, competitor1_id, competitor2_id, score1, score2, status, winner_id, win_method, round, bracket_id, next_match_id, mat, logs)
-       VALUES (@id, @tournamentId, @competitor1Id, @competitor2Id, @score1, @score2, @status, @winnerId, @winMethod, @round, @bracketId, @nextMatchId, @mat, @logs)`
+      `INSERT INTO matches (id, tournament_id, competitor1_id, competitor2_id, score1, score2, status, winner_id, win_method, round, bracket_id, next_match_id, mat, logs, format, bracket_section, loser_next_match_id, next_match_slot, loser_next_match_slot)
+       VALUES (@id, @tournamentId, @competitor1Id, @competitor2Id, @score1, @score2, @status, @winnerId, @winMethod, @round, @bracketId, @nextMatchId, @mat, @logs, @format, @bracketSection, @loserNextMatchId, @nextMatchSlot, @loserNextMatchSlot)`
     )
     .run({
       id: m.id,
@@ -29,17 +29,22 @@ function insertMatch(m: Match, tournamentId: string): void {
       nextMatchId: m.nextMatchId ?? null,
       mat: m.mat ?? null,
       logs: JSON.stringify(m.logs ?? []),
+      format: m.format ?? null,
+      bracketSection: m.bracketSection ?? null,
+      loserNextMatchId: m.loserNextMatchId ?? null,
+      nextMatchSlot: m.nextMatchSlot ?? null,
+      loserNextMatchSlot: m.loserNextMatchSlot ?? null,
     });
 }
 
-matchesRouter.get('/', (req, res) => {
+matchesRouter.get('/', requireAuth, (req, res) => {
   const rows = getDb().prepare('SELECT * FROM matches WHERE tournament_id = ?').all(req.tournamentId);
   res.json((rows as Parameters<typeof rowToMatch>[0][]).map(rowToMatch));
 });
 
 // Bulk-replaces every match belonging to one bracket category — used by bracket generation,
 // which always recomputes the whole category's match tree from scratch client-side.
-matchesRouter.put('/bracket/:bracketId', (req, res) => {
+matchesRouter.put('/bracket/:bracketId', requireAuth, (req, res) => {
   const body = req.body as { matches?: unknown };
   if (!Array.isArray(body.matches) || !body.matches.every(isValidMatch)) {
     res.status(400).json({ error: 'invalid_matches' });
@@ -60,7 +65,7 @@ matchesRouter.put('/bracket/:bracketId', (req, res) => {
   res.status(201).json((rows as Parameters<typeof rowToMatch>[0][]).map(rowToMatch));
 });
 
-matchesRouter.post('/:id/call-to-mat', (req, res) => {
+matchesRouter.post('/:id/call-to-mat', requireAuth, (req, res) => {
   const mat = req.body?.mat;
   if (typeof mat !== 'string' || !mat) {
     res.status(400).json({ error: 'invalid_mat' });
@@ -80,7 +85,14 @@ matchesRouter.post('/:id/call-to-mat', (req, res) => {
   tx();
 
   const row = db.prepare('SELECT * FROM matches WHERE id = ? AND tournament_id = ?').get(req.params.id, req.tournamentId);
-  res.json(rowToMatch(row as Parameters<typeof rowToMatch>[0]));
+  const called = rowToMatch(row as Parameters<typeof rowToMatch>[0]);
+  broadcastMatchCalled(req.tournamentId, {
+    matchId: called.id,
+    competitor1Id: called.competitor1Id,
+    competitor2Id: called.competitor2Id,
+    mat,
+  });
+  res.json(called);
 });
 
 interface FinishBody {
@@ -97,7 +109,7 @@ function isFinishBody(b: unknown): b is FinishBody {
   return typeof o.winnerId === 'string' && typeof o.method === 'string';
 }
 
-matchesRouter.post('/:id/finish', (req, res) => {
+matchesRouter.post('/:id/finish', requireAuthOrMat, (req, res) => {
   if (!isFinishBody(req.body)) {
     res.status(400).json({ error: 'invalid_finish_body' });
     return;
@@ -105,10 +117,26 @@ matchesRouter.post('/:id/finish', (req, res) => {
   const { winnerId, method, score1, score2, logs } = req.body;
   const db = getDb();
   const current = db.prepare('SELECT * FROM matches WHERE id = ? AND tournament_id = ?').get(req.params.id, req.tournamentId) as
-    | { id: string; competitor1_id: string | null; next_match_id: string | null }
+    | {
+        id: string;
+        competitor1_id: string | null;
+        competitor2_id: string | null;
+        next_match_id: string | null;
+        mat: string | null;
+        loser_next_match_id: string | null;
+        next_match_slot: number | null;
+        loser_next_match_slot: number | null;
+      }
     | undefined;
   if (!current) {
     res.status(404).json({ error: 'not_found' });
+    return;
+  }
+  // A mat-token may only finish matches currently assigned to its own mat —
+  // req.mat is unset for a full organizer tournament-token, which is
+  // unrestricted (see requireAuthOrMat.ts).
+  if (req.mat && current.mat !== req.mat) {
+    res.status(403).json({ error: 'wrong_mat' });
     return;
   }
 
@@ -126,11 +154,20 @@ matchesRouter.post('/:id/finish', (req, res) => {
     );
 
     if (current.next_match_id) {
-      // Same convention as the client: an even trailing "idx" number feeds
-      // competitor1Id of the next match, odd feeds competitor2Id.
-      const isFirst = parseInt(current.id.split('idx').pop() || '0', 10) % 2 === 0;
+      // Prefer the explicit next_match_slot (set by double-elim/round-robin
+      // generation); legacy single-elim matches never set it, so fall back to
+      // the same trailing "idx" parity convention the client has always used.
+      const isFirst = current.next_match_slot
+        ? current.next_match_slot === 1
+        : parseInt(current.id.split('idx').pop() || '0', 10) % 2 === 0;
       const column = isFirst ? 'competitor1_id' : 'competitor2_id';
       db.prepare(`UPDATE matches SET ${column} = ? WHERE id = ? AND tournament_id = ?`).run(winnerId, current.next_match_id, req.tournamentId);
+    }
+
+    if (current.loser_next_match_id && current.competitor1_id && current.competitor2_id) {
+      const loserId = winnerId === current.competitor1_id ? current.competitor2_id : current.competitor1_id;
+      const column = current.loser_next_match_slot === 2 ? 'competitor2_id' : 'competitor1_id';
+      db.prepare(`UPDATE matches SET ${column} = ? WHERE id = ? AND tournament_id = ?`).run(loserId, current.loser_next_match_id, req.tournamentId);
     }
   });
   tx();

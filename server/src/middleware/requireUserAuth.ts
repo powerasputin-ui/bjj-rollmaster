@@ -13,6 +13,10 @@ export function requireUserAuth(req: Request, res: Response, next: NextFunction)
   }
   try {
     const payload = verifySession(token);
+    if (payload.kind !== 'user') {
+      res.status(401).json({ error: 'unauthorized' });
+      return;
+    }
     req.userId = payload.sub;
     next();
   } catch {

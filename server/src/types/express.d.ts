@@ -5,6 +5,8 @@ declare global {
     interface Request {
       tournamentId: string;
       userId: string;
+      athleteId: string;
+      mat?: string;
     }
   }
 }

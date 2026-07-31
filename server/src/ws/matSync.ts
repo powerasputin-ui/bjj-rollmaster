@@ -19,21 +19,32 @@ function compositeKey(tournamentId: string, mat: string): string {
   return `${tournamentId}:${mat}`;
 }
 
+interface ResolvedAuth {
+  tournamentId: string;
+  // null = unrestricted (organizer tournament-token, or the unauthenticated
+  // TV display) — may join/write any mat. A mat-token's own mat number
+  // otherwise, which the caller must match against the message's mat.
+  mat: string | null;
+}
+
 // The operator console authenticates with its session JWT (tournamentId is
 // derived server-side, never trusted from the client); the unauthenticated TV
 // display instead sends the tournament's public slug, resolved the same way
-// as server/src/routes/public.ts.
-function resolveTournamentId(msg: Record<string, unknown>): string | null {
+// as server/src/routes/public.ts. A mat-token additionally locks the
+// connection to its own mat — see the mat check at the call site.
+function resolveAuth(msg: Record<string, unknown>): ResolvedAuth | null {
   if (typeof msg.token === 'string' && msg.token) {
     try {
-      return verifySession(msg.token).tournamentId;
+      const payload = verifySession(msg.token);
+      if (!payload.tournamentId) return null;
+      return { tournamentId: payload.tournamentId, mat: payload.kind === 'mat' ? payload.mat ?? null : null };
     } catch {
       return null;
     }
   }
   if (typeof msg.slug === 'string' && msg.slug) {
     const row = getDb().prepare('SELECT id FROM tournaments WHERE slug = ?').get(msg.slug) as { id: string } | undefined;
-    return row?.id ?? null;
+    return row ? { tournamentId: row.id, mat: null } : null;
   }
   return null;
 }
@@ -70,6 +81,28 @@ function broadcastToMat(tournamentId: string, mat: string, payload: LiveState | 
   });
 }
 
+export interface MatchCalledPayload {
+  matchId: string;
+  competitor1Id: string | null;
+  competitor2Id: string | null;
+  mat: string;
+}
+
+// Broadcast a "your match was called" event to every client subscribed to
+// this tournament — not mat-scoped, unlike broadcastToMat, since a listener
+// here (an athlete's cabinet) doesn't know in advance which mat it'll be
+// called to. Called from routes/matches.ts's call-to-mat handler. Clients
+// filter for themselves by checking competitor1Id/competitor2Id against
+// their own registrations — the server doesn't track athlete identity here.
+export function broadcastMatchCalled(tournamentId: string, payload: MatchCalledPayload): void {
+  const msg = JSON.stringify({ type: 'called', tournamentId, ...payload });
+  clients.forEach((meta, ws) => {
+    if (meta.tournamentId === tournamentId && ws.readyState === WebSocket.OPEN) {
+      ws.send(msg);
+    }
+  });
+}
+
 export function attachMatSync(server: Server): WebSocketServer {
   const wss = new WebSocketServer({ server, path: '/ws' });
 
@@ -85,11 +118,27 @@ export function attachMatSync(server: Server): WebSocketServer {
       }
       if (!data || typeof data !== 'object') return;
       const msg = data as Record<string, unknown>;
+
+      // Subscribe-only clients (an athlete's cabinet, listening for "called"
+      // broadcasts) don't pick a mat — they just want every event for their
+      // tournament. Handled before the mat-required gate below, which every
+      // other message type (join/state/reset) still needs.
+      if (msg.type === 'subscribe') {
+        const auth = resolveAuth(msg);
+        if (!auth) return;
+        clients.set(ws, { tournamentId: auth.tournamentId, mat: null });
+        return;
+      }
+
       if (typeof msg.mat !== 'string' || !msg.mat) return;
       const mat = msg.mat;
 
-      const tournamentId = resolveTournamentId(msg);
-      if (!tournamentId) return;
+      const auth = resolveAuth(msg);
+      if (!auth) return;
+      // A mat-token is locked to its own mat — it can't even join/observe a
+      // different mat's channel, let alone write to it.
+      if (auth.mat !== null && auth.mat !== mat) return;
+      const tournamentId = auth.tournamentId;
       const key = compositeKey(tournamentId, mat);
 
       if (msg.type === 'join') {

@@ -18,6 +18,7 @@ async function createTournament(request: import('@playwright/test').APIRequestCo
 
 test.describe('Multi-tournament accounts and the public catalog', () => {
   test('an organizer can create two tournaments, switch between them, and each keeps its own roster', async ({ page, request }) => {
+    const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const { userToken } = await registerOrganizer(request);
     const created1 = await createTournament(request, userToken, `Spring Open ${Date.now()}`);
     const created2 = await createTournament(request, userToken, `Summer Cup ${Date.now()}`);
@@ -25,11 +26,11 @@ test.describe('Multi-tournament accounts and the public catalog', () => {
     // Add a distinct athlete to tournament 1 via its own session token.
     await request.post('/api/competitors', {
       headers: { Authorization: `Bearer ${created1.token}` },
-      data: { id: 'switch-athlete-1', name: 'Athlete One', belt: 'White', weight: '70', team: 'T1', ageGroup: 'Adult' },
+      data: { id: `switch-athlete-1-${unique}`, name: 'Athlete One', belt: 'White', weight: '70', team: 'T1', ageGroup: 'Adult' },
     });
     await request.post('/api/competitors', {
       headers: { Authorization: `Bearer ${created2.token}` },
-      data: { id: 'switch-athlete-2', name: 'Athlete Two', belt: 'White', weight: '80', team: 'T2', ageGroup: 'Adult' },
+      data: { id: `switch-athlete-2-${unique}`, name: 'Athlete Two', belt: 'White', weight: '80', team: 'T2', ageGroup: 'Adult' },
     });
 
     await page.addInitScript((t: string) => localStorage.setItem('bjj_user_token', t), userToken);

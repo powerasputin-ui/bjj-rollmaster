@@ -1,4 +1,4 @@
-import type { Competitor, Match, MatchEvent, Score, TimerConfig } from '../types';
+import type { AgeCategory, BracketFormat, Competitor, Match, MatchEvent, Score, SparringFormat, TimerConfig, WeightCategory } from '../types';
 
 export type ApiResult<T> = { ok: true; data: T } | { ok: false; error: string; status?: number };
 
@@ -10,6 +10,8 @@ export interface TournamentInfo {
   location: string | null;
   description: string | null;
   status: 'draft' | 'published' | 'archived';
+  defaultBracketFormat: BracketFormat;
+  sparringFormat: SparringFormat;
 }
 
 export interface PublicTournamentSummary {
@@ -27,6 +29,7 @@ export interface PublicTournamentSummary {
 // many tournaments, so these can't be collapsed into one token.
 const USER_TOKEN_KEY = 'bjj_user_token';
 const SESSION_TOKEN_KEY = 'bjj_session_token';
+const ATHLETE_TOKEN_KEY = 'bjj_athlete_token';
 
 function readToken(key: string): string {
   try {
@@ -60,9 +63,13 @@ export function getSessionToken(): string { return readToken(SESSION_TOKEN_KEY);
 export function setSessionToken(token: string): void { writeToken(SESSION_TOKEN_KEY, token); }
 export function clearSessionToken(): void { removeToken(SESSION_TOKEN_KEY); }
 
-type AuthMode = 'none' | 'user' | 'tournament';
+export function getAthleteToken(): string { return readToken(ATHLETE_TOKEN_KEY); }
+export function setAthleteToken(token: string): void { writeToken(ATHLETE_TOKEN_KEY, token); }
+export function clearAthleteToken(): void { removeToken(ATHLETE_TOKEN_KEY); }
 
-async function rawRequest<T>(method: string, path: string, body: unknown, authMode: AuthMode): Promise<ApiResult<T>> {
+type AuthMode = 'none' | 'user' | 'tournament' | 'athlete' | 'explicit';
+
+async function rawRequest<T>(method: string, path: string, body: unknown, authMode: AuthMode, explicitToken?: string): Promise<ApiResult<T>> {
   try {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (authMode === 'user') {
@@ -71,6 +78,11 @@ async function rawRequest<T>(method: string, path: string, body: unknown, authMo
     } else if (authMode === 'tournament') {
       const token = getSessionToken();
       if (token) headers.Authorization = `Bearer ${token}`;
+    } else if (authMode === 'athlete') {
+      const token = getAthleteToken();
+      if (token) headers.Authorization = `Bearer ${token}`;
+    } else if (authMode === 'explicit' && explicitToken) {
+      headers.Authorization = `Bearer ${explicitToken}`;
     }
 
     const res = await fetch(`/api${path}`, {
@@ -112,6 +124,18 @@ function publicRequest<T>(method: string, path: string, body?: unknown): Promise
   return rawRequest<T>(method, path, body, 'none');
 }
 
+// Athlete-scoped — /api/public/athlete/* endpoints, once logged into the cabinet.
+function athleteRequest<T>(method: string, path: string, body?: unknown): Promise<ApiResult<T>> {
+  return rawRequest<T>(method, path, body, 'athlete');
+}
+
+// Mat-token-scoped — the token is passed explicitly (never persisted to
+// storage) and lives only in the referee's shared URL, same as the TV
+// display's `?display=true` link.
+function tokenRequest<T>(method: string, path: string, body: unknown, token: string): Promise<ApiResult<T>> {
+  return rawRequest<T>(method, path, body, 'explicit', token);
+}
+
 export const api = {
   // --- Account (user-token) ---
   register: (email: string, password: string) => publicRequest<{ token: string }>('POST', '/auth/register', { email, password }),
@@ -123,17 +147,17 @@ export const api = {
 
   // --- Tournaments (user-token) — an account can own many ---
   listTournaments: () => userRequest<TournamentInfo[]>('GET', '/tournaments'),
-  createTournament: (data: { name: string; eventDate?: string; location?: string; description?: string }) =>
+  createTournament: (data: { name: string; eventDate?: string; location?: string; description?: string; defaultBracketFormat?: BracketFormat; sparringFormat?: SparringFormat }) =>
     userRequest<{ token: string; tournament: TournamentInfo }>('POST', '/tournaments', data),
   selectTournament: (id: string) => userRequest<{ token: string; tournament: TournamentInfo }>('POST', `/tournaments/${id}/select`),
-  updateTournament: (id: string, patch: Partial<{ name: string; eventDate: string | null; location: string | null; description: string | null; status: TournamentInfo['status'] }>) =>
+  updateTournament: (id: string, patch: Partial<{ name: string; eventDate: string | null; location: string | null; description: string | null; status: TournamentInfo['status']; defaultBracketFormat: BracketFormat; sparringFormat: SparringFormat }>) =>
     userRequest<TournamentInfo>('PATCH', `/tournaments/${id}`, patch),
 
   // --- Organizer (session-token, tournament-scoped server-side) ---
   getCurrentTournament: () => request<TournamentInfo>('GET', '/tournament'),
   getCompetitors: () => request<Competitor[]>('GET', '/competitors'),
   createCompetitor: (c: Competitor) => request<Competitor>('POST', '/competitors', c),
-  patchCompetitor: (id: string, patch: Partial<Pick<Competitor, 'madeWeight' | 'isAbsolute' | 'weight'>>) =>
+  patchCompetitor: (id: string, patch: Partial<Pick<Competitor, 'madeWeight' | 'isAbsolute' | 'weight' | 'belt' | 'ageGroup' | 'competesGi' | 'competesNoGi' | 'ageCategoryId'>>) =>
     request<Competitor>('PATCH', `/competitors/${id}`, patch),
   deleteCompetitor: (id: string) => request<void>('DELETE', `/competitors/${id}`),
 
@@ -152,6 +176,14 @@ export const api = {
   getTimerConfig: () => request<TimerConfig>('GET', '/timer-config'),
   updateTimerConfig: (config: TimerConfig) => request<TimerConfig>('PUT', '/timer-config', config),
 
+  getWeightCategories: () => request<WeightCategory[]>('GET', '/weight-categories'),
+  updateWeightCategories: (categories: WeightCategory[]) => request<WeightCategory[]>('PUT', '/weight-categories', categories),
+
+  getAgeCategories: () => request<AgeCategory[]>('GET', '/age-categories'),
+  updateAgeCategories: (categories: AgeCategory[]) => request<AgeCategory[]>('PUT', '/age-categories', categories),
+
+  generateMatToken: (mat: string) => request<{ token: string }>('POST', `/tournament/mats/${mat}/token`),
+
   importAll: (payload: { competitors: Competitor[]; matches: Match[]; timerConfig?: TimerConfig }) =>
     request<{ competitors: Competitor[]; matches: Match[] }>('POST', '/import', payload),
   resetAll: () => request<void>('POST', '/reset'),
@@ -164,5 +196,35 @@ export const publicApi = {
   getCompetitors: (slug: string) => publicRequest<Competitor[]>('GET', `/public/${slug}/competitors`),
   getMatches: (slug: string) => publicRequest<Match[]>('GET', `/public/${slug}/matches`),
   getTimerConfig: (slug: string) => publicRequest<TimerConfig>('GET', `/public/${slug}/timer-config`),
-  submitRegistration: (slug: string, c: Competitor) => publicRequest<{ ok: true }>('POST', `/public/${slug}/registrations`, c),
+  getTournamentInfo: (slug: string) => publicRequest<{ name: string; sparringFormat: SparringFormat }>('GET', `/public/${slug}`),
+  getWeightCategories: (slug: string) => publicRequest<WeightCategory[]>('GET', `/public/${slug}/weight-categories`),
+  getAgeCategories: (slug: string) => publicRequest<AgeCategory[]>('GET', `/public/${slug}/age-categories`),
+  submitRegistration: (slug: string, c: Competitor & { email: string }) =>
+    publicRequest<{ ok: true; devVerifyToken?: string }>('POST', `/public/${slug}/registrations`, c),
+  verifyRegistration: (token: string) => publicRequest<{ token: string }>('POST', '/public/verify-registration', { token }),
+  requestAthleteLogin: (email: string) =>
+    publicRequest<{ ok: true; devLoginToken?: string }>('POST', '/public/athlete/request-login', { email }),
+  athleteLogin: (token: string) => publicRequest<{ token: string }>('POST', '/public/athlete/login', { token }),
+};
+
+export interface AthleteRegistration extends Competitor {
+  tournamentName: string;
+  tournamentSlug: string;
+}
+
+// --- Athlete cabinet (athlete-token, minted by verify-registration/athlete/login) ---
+export const athleteApi = {
+  me: () => athleteRequest<AthleteRegistration[]>('GET', '/public/athlete/me'),
+  updateRegistration: (id: string, patch: Omit<Competitor, 'id' | 'status'>) =>
+    athleteRequest<Competitor>('PATCH', `/public/athlete/registrations/${id}`, patch),
+};
+
+// --- Mat referee/scorekeeper (mat-token, minted by the organizer, embedded
+// in the shared link — never persisted, unlike the other token stores above) ---
+export const matOperatorApi = {
+  finishMatch: (
+    token: string,
+    matchId: string,
+    payload: { winnerId: string; method: string; score1: Score; score2: Score; logs: MatchEvent[] }
+  ) => tokenRequest<Match>('POST', `/matches/${matchId}/finish`, payload, token),
 };

@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { Router } from 'express';
-import { getDb, createTimerConfigRow } from '../db/client.js';
+import { getDb, createTimerConfigRow, createDefaultWeightCategoryRows, createDefaultAgeCategoryRows } from '../db/client.js';
 import { requireUserAuth } from '../middleware/requireUserAuth.js';
 import { signSession } from '../lib/jwt.js';
 import { slugify } from '../lib/slug.js';
@@ -16,6 +16,8 @@ export interface TournamentRow {
   location: string | null;
   description: string | null;
   status: string;
+  default_bracket_format: string;
+  sparring_format: string;
 }
 
 export interface TournamentOut {
@@ -26,6 +28,8 @@ export interface TournamentOut {
   location: string | null;
   description: string | null;
   status: 'draft' | 'published' | 'archived';
+  defaultBracketFormat: 'single' | 'double' | 'round_robin';
+  sparringFormat: 'gi' | 'nogi' | 'both';
 }
 
 export function rowToTournament(row: TournamentRow): TournamentOut {
@@ -37,7 +41,17 @@ export function rowToTournament(row: TournamentRow): TournamentOut {
     location: row.location,
     description: row.description,
     status: row.status as TournamentOut['status'],
+    defaultBracketFormat: row.default_bracket_format as TournamentOut['defaultBracketFormat'],
+    sparringFormat: row.sparring_format as TournamentOut['sparringFormat'],
   };
+}
+
+function isValidBracketFormat(v: unknown): v is 'single' | 'double' | 'round_robin' {
+  return v === 'single' || v === 'double' || v === 'round_robin';
+}
+
+function isValidSparringFormat(v: unknown): v is 'gi' | 'nogi' | 'both' {
+  return v === 'gi' || v === 'nogi' || v === 'both';
 }
 
 function emailForUser(userId: string): string {
@@ -50,6 +64,8 @@ interface TournamentInput {
   eventDate?: string | null;
   location?: string | null;
   description?: string | null;
+  defaultBracketFormat?: 'single' | 'double' | 'round_robin';
+  sparringFormat?: 'gi' | 'nogi' | 'both';
 }
 
 function isValidTournamentInput(body: unknown): body is TournamentInput {
@@ -59,6 +75,8 @@ function isValidTournamentInput(body: unknown): body is TournamentInput {
   if (o.eventDate !== undefined && o.eventDate !== null && typeof o.eventDate !== 'string') return false;
   if (o.location !== undefined && o.location !== null && typeof o.location !== 'string') return false;
   if (o.description !== undefined && o.description !== null && typeof o.description !== 'string') return false;
+  if (o.defaultBracketFormat !== undefined && !isValidBracketFormat(o.defaultBracketFormat)) return false;
+  if (o.sparringFormat !== undefined && !isValidSparringFormat(o.sparringFormat)) return false;
   return true;
 }
 
@@ -75,7 +93,7 @@ tournamentsRouter.post('/', (req, res) => {
     res.status(400).json({ error: 'invalid_tournament' });
     return;
   }
-  const { name, eventDate, location, description } = req.body;
+  const { name, eventDate, location, description, defaultBracketFormat, sparringFormat } = req.body;
   const db = getDb();
   const id = crypto.randomUUID();
   const slug = slugify(name.trim());
@@ -83,9 +101,11 @@ tournamentsRouter.post('/', (req, res) => {
   try {
     const tx = db.transaction(() => {
       db.prepare(
-        'INSERT INTO tournaments (id, owner_user_id, name, slug, event_date, location, description) VALUES (?, ?, ?, ?, ?, ?, ?)'
-      ).run(id, req.userId, name.trim(), slug, eventDate ?? null, location ?? null, description ?? null);
+        'INSERT INTO tournaments (id, owner_user_id, name, slug, event_date, location, description, default_bracket_format, sparring_format) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+      ).run(id, req.userId, name.trim(), slug, eventDate ?? null, location ?? null, description ?? null, defaultBracketFormat ?? 'single', sparringFormat ?? 'gi');
       createTimerConfigRow(id);
+      createDefaultWeightCategoryRows(id);
+      createDefaultAgeCategoryRows(id);
     });
     tx();
   } catch (err) {
@@ -95,7 +115,7 @@ tournamentsRouter.post('/', (req, res) => {
   }
 
   const row = db.prepare('SELECT * FROM tournaments WHERE id = ?').get(id) as TournamentRow;
-  const token = signSession({ sub: req.userId, tournamentId: id, email: emailForUser(req.userId) });
+  const token = signSession({ sub: req.userId, kind: 'tournament', tournamentId: id, email: emailForUser(req.userId) });
   res.status(201).json({ token, tournament: rowToTournament(row) });
 });
 
@@ -110,7 +130,7 @@ tournamentsRouter.post('/:id/select', (req, res) => {
     res.status(404).json({ error: 'not_found' });
     return;
   }
-  const token = signSession({ sub: req.userId, tournamentId: row.id, email: emailForUser(req.userId) });
+  const token = signSession({ sub: req.userId, kind: 'tournament', tournamentId: row.id, email: emailForUser(req.userId) });
   res.json({ token, tournament: rowToTournament(row) });
 });
 
@@ -146,6 +166,14 @@ tournamentsRouter.patch('/:id', (req, res) => {
   if (body.status === 'draft' || body.status === 'published' || body.status === 'archived') {
     fields.push('status = @status');
     params.status = body.status;
+  }
+  if (isValidBracketFormat(body.defaultBracketFormat)) {
+    fields.push('default_bracket_format = @defaultBracketFormat');
+    params.defaultBracketFormat = body.defaultBracketFormat;
+  }
+  if (isValidSparringFormat(body.sparringFormat)) {
+    fields.push('sparring_format = @sparringFormat');
+    params.sparringFormat = body.sparringFormat;
   }
 
   if (fields.length === 0) {

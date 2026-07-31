@@ -18,14 +18,21 @@ export interface Competitor {
   ageGroup: AgeGroup;
   isAbsolute?: boolean;
   madeWeight?: boolean;
+  competesGi?: boolean;
+  competesNoGi?: boolean;
+  ageCategoryId?: string | null;
   status?: 'approved' | 'pending' | 'rejected';
 }
+
+export type SparringFormat = 'gi' | 'nogi' | 'both';
 
 export interface Score {
   points: number;
   advantages: number;
   penalties: number;
 }
+
+export type BracketFormat = 'single' | 'double' | 'round_robin';
 
 export interface Match {
   id: string;
@@ -41,6 +48,16 @@ export interface Match {
   nextMatchId?: string;
   mat?: string;
   logs?: MatchEvent[];
+  // Bracket-format metadata, denormalized onto every match sharing a
+  // bracketId (same pattern as bracketId/mat themselves). Only 'double'
+  // uses bracketSection/loserNextMatch*; single-elim matches never set
+  // these, so the existing id-parity-based slot inference stays the
+  // legacy fallback for them (see BracketView.tsx / matches.ts finish).
+  format?: BracketFormat;
+  bracketSection?: 'winners' | 'losers' | 'final';
+  loserNextMatchId?: string | null;
+  nextMatchSlot?: 1 | 2;
+  loserNextMatchSlot?: 1 | 2;
 }
 
 export interface TimerConfig {
@@ -69,38 +86,70 @@ export enum View {
   TOURNAMENT = 'TOURNAMENT',
   BRACKETS = 'BRACKETS',
   PENDING = 'PENDING',
+  TEAMS = 'TEAMS',
+  RESULTS = 'RESULTS',
+  MATS = 'MATS',
   SETTINGS = 'SETTINGS'
 }
 
-export const WEIGHT_ORDER: Record<string, number> = {
-  'rooster': 1, 'lightFeather': 2, 'feather': 3, 'light': 4, 'middle': 5, 
-  'mediumHeavy': 6, 'heavy': 7, 'superHeavy': 8, 'ultraHeavy': 9,
-  'kidTiny': 1, 'kidSmall': 2, 'kidMedium': 3, 'kidLarge': 4, 'kidHuge': 5,
-  'absolute': 100, 'unknown': 999
-};
+export interface WeightCategory {
+  id: string;
+  ageGroup: AgeGroup;
+  name: string;
+  maxWeight: number | null;
+}
 
-export const getWeightCategoryKey = (weightStr: string, ageGroup: AgeGroup): string => {
+// Ascending by maxWeight, null (no upper bound — the heaviest category)
+// last. Order is never stored server-side, so this is the single source of
+// truth for display/sort order everywhere categories are rendered.
+function sortCategories(categories: WeightCategory[], ageGroup: AgeGroup): WeightCategory[] {
+  return categories
+    .filter(c => c.ageGroup === ageGroup)
+    .sort((a, b) => {
+      if (a.maxWeight === null) return 1;
+      if (b.maxWeight === null) return -1;
+      return a.maxWeight - b.maxWeight;
+    });
+}
+
+export function orderedCategoryIds(categories: WeightCategory[], ageGroup: AgeGroup): string[] {
+  return sortCategories(categories, ageGroup).map(c => c.id);
+}
+
+// `categories` is required (no hardcoded-default fallback) — defaulting to
+// the old global boundaries would silently mis-group competitors the moment
+// a tournament's real configured categories diverge from them. An empty
+// list (e.g. before the per-tournament fetch resolves) safely resolves every
+// competitor to 'unknown' for that render, same as competitors/matches
+// starting as [] elsewhere in the app.
+export const getWeightCategoryKey = (weightStr: string, ageGroup: AgeGroup, categories: WeightCategory[]): string => {
   const weight = parseFloat(weightStr.toString().replace(',', '.').replace(/[^\d.]/g, ''));
   if (isNaN(weight)) return 'unknown';
-  
-  if (ageGroup === 'Adult') {
-    if (weight <= 57.5) return 'rooster';
-    if (weight <= 64) return 'lightFeather';
-    if (weight <= 70) return 'feather';
-    if (weight <= 76) return 'light';
-    if (weight <= 82.3) return 'middle';
-    if (weight <= 88.3) return 'mediumHeavy';
-    if (weight <= 94.3) return 'heavy';
-    if (weight <= 100.5) return 'superHeavy';
-    return 'ultraHeavy';
-  } else {
-    if (weight <= 20) return 'kidTiny';
-    if (weight <= 30) return 'kidSmall';
-    if (weight <= 45) return 'kidMedium';
-    if (weight <= 60) return 'kidLarge';
-    return 'kidHuge';
-  }
+  const match = sortCategories(categories, ageGroup).find(c => c.maxWeight === null || weight <= c.maxWeight);
+  return match ? match.id : 'unknown';
 };
+
+// A second, independent refinement axis within each ageGroup (Juvenile,
+// Adult, Master 1-7, or a handful of kids sub-brackets) — organizer-
+// configurable like WeightCategory, but there's no numeric value to
+// auto-bucket a competitor into one (unlike weight), so it's a direct pick
+// (like belt) rather than computed. ageGroup itself is unchanged and still
+// drives belt-list eligibility and which weight_categories apply — Masters
+// share the adult weight classes in real BJJ rules, so that axis is
+// deliberately not subdivided further here.
+export interface AgeCategory {
+  id: string;
+  ageGroup: AgeGroup;
+  name: string;
+  sortOrder: number;
+}
+
+export function orderedAgeCategoryIds(categories: AgeCategory[], ageGroup: AgeGroup): string[] {
+  return categories
+    .filter(c => c.ageGroup === ageGroup)
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map(c => c.id);
+}
 
 export const BELT_RANK: Record<string, number> = {
   'Black': 10, 'Brown': 9, 'Purple': 8, 'Blue': 7, 'White': 1,

@@ -90,3 +90,80 @@ export function connectMatSocket(initialMat: string, auth: MatSocketAuth, handle
     },
   };
 }
+
+export interface MatchCalledEvent {
+  matchId: string;
+  competitor1Id: string | null;
+  competitor2Id: string | null;
+  mat: string;
+}
+
+export interface CalledSocket {
+  close: () => void;
+}
+
+// Tournament-wide (not mat-scoped) "your match was called" listener, used by
+// AthleteCabinet.tsx — subscribes via the tournament's public slug, same
+// unauthenticated trust level as the TV display, but read-only (never sends
+// join/state/reset). See server/src/ws/matSync.ts's 'subscribe'/'called'
+// handling and routes/matches.ts's call-to-mat handler, which triggers it.
+export function connectCalledSocket(slug: string, onCalled: (event: MatchCalledEvent) => void): CalledSocket {
+  let ws: WebSocket | null = null;
+  let closed = false;
+  let reconnectDelay = 1000;
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const wsUrl = () => {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${protocol}//${window.location.host}/ws`;
+  };
+
+  const connect = () => {
+    if (closed) return;
+    try {
+      ws = new WebSocket(wsUrl());
+    } catch {
+      reconnectTimer = setTimeout(connect, reconnectDelay);
+      reconnectDelay = Math.min(reconnectDelay * 2, 10000);
+      return;
+    }
+
+    ws.onopen = () => {
+      reconnectDelay = 1000;
+      ws?.send(JSON.stringify({ type: 'subscribe', slug }));
+    };
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data && data.type === 'called') {
+          onCalled({
+            matchId: data.matchId,
+            competitor1Id: data.competitor1Id ?? null,
+            competitor2Id: data.competitor2Id ?? null,
+            mat: data.mat,
+          });
+        }
+      } catch {
+        /* ignore malformed message */
+      }
+    };
+    ws.onclose = () => {
+      if (closed) return;
+      reconnectTimer = setTimeout(connect, reconnectDelay);
+      reconnectDelay = Math.min(reconnectDelay * 2, 10000);
+    };
+    ws.onerror = () => {
+      ws?.close();
+    };
+  };
+
+  connect();
+
+  return {
+    close: () => {
+      closed = true;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      ws?.close();
+    },
+  };
+}

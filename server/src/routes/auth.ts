@@ -7,6 +7,7 @@ import { getDb } from '../db/client.js';
 import { requireUserAuth } from '../middleware/requireUserAuth.js';
 import { signSession } from '../lib/jwt.js';
 import { sendPasswordResetEmail } from '../lib/email.js';
+import { isValidEmail } from '../validation.js';
 
 export const authRouter = Router();
 
@@ -53,10 +54,6 @@ interface UserRow {
   google_id: string | null;
 }
 
-function isValidEmail(email: unknown): email is string {
-  return typeof email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-}
-
 // Registering (or first-time Google sign-in) only creates the account — a
 // tournament is a separate thing an organizer creates afterwards from their
 // tournament hub (see routes/tournaments.ts), and one account may own many.
@@ -82,7 +79,7 @@ authRouter.post('/register', registerLimiter, async (req, res) => {
     const userId = crypto.randomUUID();
     getDb().prepare('INSERT INTO users (id, email, password_hash) VALUES (?, ?, ?)').run(userId, email, passwordHash);
 
-    const token = signSession({ sub: userId, email });
+    const token = signSession({ sub: userId, kind: 'user', email });
     res.status(201).json({ token });
   } catch (err) {
     // The SELECT check above has a TOCTOU gap — two concurrent registrations
@@ -116,7 +113,7 @@ authRouter.post('/login', loginLimiter, async (req, res) => {
       return;
     }
 
-    const token = signSession({ sub: user.id, email: user.email });
+    const token = signSession({ sub: user.id, kind: 'user', email: user.email });
     res.json({ token });
   } catch (err) {
     console.error('Login failed', err);
@@ -167,12 +164,12 @@ authRouter.post('/google', loginLimiter, async (req, res) => {
     if (!user) {
       const userId = crypto.randomUUID();
       db.prepare('INSERT INTO users (id, email, google_id) VALUES (?, ?, ?)').run(userId, payload.email, payload.sub);
-      const token = signSession({ sub: userId, email: payload.email });
+      const token = signSession({ sub: userId, kind: 'user', email: payload.email });
       res.status(201).json({ token });
       return;
     }
 
-    const token = signSession({ sub: user.id, email: user.email });
+    const token = signSession({ sub: user.id, kind: 'user', email: user.email });
     res.json({ token });
   } catch (err) {
     // Same TOCTOU window as /register (and here also possible on the

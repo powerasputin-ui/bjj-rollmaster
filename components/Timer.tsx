@@ -15,10 +15,18 @@ interface TimerProps {
   competitors?: Competitor[];
   onFinishMatch?: (matchId: string, winnerId: string, method: string, score1: Score, score2: Score, logs: MatchEvent[]) => void;
   tournamentSlug?: string;
+  // Mat referee console (see MatOperatorConsole.tsx): pins the console to one
+  // mat (no switcher) and hides the global round/rest/rounds settings, which
+  // stay an organizer-only concern. Also overrides the WS auth token, since a
+  // referee authenticates with a narrow mat-token, not the organizer's session.
+  lockedMat?: string;
+  hideSettings?: boolean;
+  wsAuthToken?: string;
 }
 
-const Timer: React.FC<TimerProps> = ({ config, setConfig, isDisplayOnly = false, t, language = 'ru', matches = [], competitors = [], onFinishMatch, tournamentSlug }) => {
+const Timer: React.FC<TimerProps> = ({ config, setConfig, isDisplayOnly = false, t, language = 'ru', matches = [], competitors = [], onFinishMatch, tournamentSlug, lockedMat, hideSettings = false, wsAuthToken }) => {
   const getInitialMat = () => {
+    if (lockedMat) return lockedMat;
     const params = new URLSearchParams(window.location.search);
     const urlMat = params.get('mat');
     if (isDisplayOnly && urlMat) return urlMat;
@@ -138,7 +146,7 @@ const Timer: React.FC<TimerProps> = ({ config, setConfig, isDisplayOnly = false,
   // Operator console authenticates with its session JWT (tournamentId derived
   // server-side); the unauthenticated TV display instead sends the public slug.
   useEffect(() => {
-    const auth: MatSocketAuth = isDisplayOnly ? { slug: tournamentSlug || '' } : { token: getSessionToken() };
+    const auth: MatSocketAuth = isDisplayOnly ? { slug: tournamentSlug || '' } : { token: wsAuthToken ?? getSessionToken() };
     const socket = connectMatSocket(selectedMat, auth, { onSync: applySync });
     matSocketRef.current = socket;
     return () => { socket.close(); matSocketRef.current = null; };
@@ -451,13 +459,17 @@ const Timer: React.FC<TimerProps> = ({ config, setConfig, isDisplayOnly = false,
         <div className="flex justify-between items-center shrink-0">
           <div className="flex items-center gap-10">
             <h2 className="text-xs font-black text-slate-500 tracking-[0.4em] uppercase">{t.matchConsole}</h2>
-            <select value={selectedMat} onChange={(e) => {
-              const newMat = e.target.value;
-              setSelectedMat(newMat);
-              localStorage.setItem('bjj_selected_mat', newMat);
-            }} className="bg-slate-900 border border-slate-800 text-white rounded-xl px-5 py-2.5 text-xs font-black outline-none cursor-pointer hover:border-indigo-500 transition-all">
-               {[1,2,3,4,5].map(n => <option key={n} value={n.toString()}>{t.mat} {n}</option>)}
-            </select>
+            {lockedMat ? (
+              <span className="bg-slate-900 border border-slate-800 text-white rounded-xl px-5 py-2.5 text-xs font-black">{t.mat} {lockedMat}</span>
+            ) : (
+              <select value={selectedMat} onChange={(e) => {
+                const newMat = e.target.value;
+                setSelectedMat(newMat);
+                localStorage.setItem('bjj_selected_mat', newMat);
+              }} className="bg-slate-900 border border-slate-800 text-white rounded-xl px-5 py-2.5 text-xs font-black outline-none cursor-pointer hover:border-indigo-500 transition-all">
+                 {[1,2,3,4,5].map(n => <option key={n} value={n.toString()}>{t.mat} {n}</option>)}
+              </select>
+            )}
             {activeMatch ? (
               <span className="flex items-center gap-2 text-[10px] font-black text-emerald-400 uppercase tracking-widest bg-emerald-500/10 px-4 py-2 rounded-xl border border-emerald-500/20">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
@@ -468,7 +480,9 @@ const Timer: React.FC<TimerProps> = ({ config, setConfig, isDisplayOnly = false,
             )}
           </div>
           <div className="flex gap-5">
-            <button onClick={() => setShowSettings(!showSettings)} className={`px-6 py-3 rounded-xl text-xs font-black transition-all border ${showSettings ? 'bg-indigo-600 text-white border-indigo-500 shadow-indigo-500/20' : 'bg-slate-900 text-slate-400 border-slate-800'}`}>⚙️ {t.settings}</button>
+            {!hideSettings && (
+              <button onClick={() => setShowSettings(!showSettings)} className={`px-6 py-3 rounded-xl text-xs font-black transition-all border ${showSettings ? 'bg-indigo-600 text-white border-indigo-500 shadow-indigo-500/20' : 'bg-slate-900 text-slate-400 border-slate-800'}`}>⚙️ {t.settings}</button>
+            )}
             <button onClick={() => window.open(`${window.location.origin}${window.location.pathname}?display=true&mat=${selectedMat}&lang=${language}&t=${tournamentSlug || ''}`, '_blank')} className="px-6 py-3 bg-indigo-600/20 text-indigo-400 rounded-xl text-xs font-black border border-indigo-600/30 uppercase tracking-[0.2em] transition-all hover:bg-indigo-600 hover:text-white">{t.tvDisplay}</button>
           </div>
         </div>
@@ -621,7 +635,7 @@ const Timer: React.FC<TimerProps> = ({ config, setConfig, isDisplayOnly = false,
 
             <div className="space-y-8">
               <div className="grid grid-cols-2 gap-3">
-                {['Submission', 'Points', 'Advantages', 'Decision'].map(method => (
+                {['Submission', 'Points', 'Advantages', 'Decision', 'Disqualification', 'Noshow'].map(method => (
                   <button key={method} onClick={() => setFinishMethod(method)} className={`py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest border transition-all active:scale-95 ${finishMethod === method ? 'bg-indigo-600 border-indigo-500 text-white shadow-xl' : 'bg-slate-950 border-slate-800 text-slate-600'}`}>{t[`${method.toLowerCase()}Win`] || method}</button>
                 ))}
               </div>

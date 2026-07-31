@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import type { TranslationKeys } from '../translations';
 import { api, type TournamentInfo } from '../services/api';
+import type { BracketFormat, SparringFormat } from '../types';
 
 interface TournamentsHubProps {
   t: TranslationKeys;
@@ -16,6 +17,8 @@ const TournamentsHub: React.FC<TournamentsHubProps> = ({ t, onOpenTournament, on
   const [eventDate, setEventDate] = useState('');
   const [location, setLocation] = useState('');
   const [description, setDescription] = useState('');
+  const [defaultBracketFormat, setDefaultBracketFormat] = useState<BracketFormat>('single');
+  const [sparringFormat, setSparringFormat] = useState<SparringFormat>('gi');
   const [submitting, setSubmitting] = useState(false);
   const [openingId, setOpeningId] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
@@ -62,6 +65,8 @@ const TournamentsHub: React.FC<TournamentsHubProps> = ({ t, onOpenTournament, on
       eventDate: eventDate || undefined,
       location: location.trim() || undefined,
       description: description.trim() || undefined,
+      defaultBracketFormat,
+      sparringFormat,
     });
     setSubmitting(false);
     if (res.ok === true) onOpenTournament(res.data.token, res.data.tournament);
@@ -159,6 +164,45 @@ const TournamentsHub: React.FC<TournamentsHubProps> = ({ t, onOpenTournament, on
               <div className="space-y-2">
                 <label className={labelClass}>{t.tournamentDescriptionLabel}</label>
                 <textarea value={description} onChange={e => setDescription(e.target.value)} rows={2} className={`${inputClass} resize-none`} />
+              </div>
+              <div className="space-y-2">
+                <label className={labelClass}>{t.bracketFormatLabel}</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {([
+                    ['single', t.bracketFormatSingle, t.bracketFormatSingleHint],
+                    ['double', t.bracketFormatDouble, t.bracketFormatDoubleHint],
+                    ['round_robin', t.bracketFormatRoundRobin, t.bracketFormatRoundRobinHint],
+                  ] as [BracketFormat, string, string][]).map(([value, label, hint]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setDefaultBracketFormat(value)}
+                      title={hint}
+                      className={`text-xs font-black uppercase tracking-tight px-3 py-4 rounded-2xl border transition-all ${defaultBracketFormat === value ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-950 border-slate-800 text-slate-500 hover:text-white'}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <label className={labelClass}>{t.sparringFormatLabel}</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {([
+                    ['gi', t.sparringFormatGi],
+                    ['nogi', t.sparringFormatNoGi],
+                    ['both', t.sparringFormatBoth],
+                  ] as [SparringFormat, string][]).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setSparringFormat(value)}
+                      className={`text-xs font-black uppercase tracking-tight px-3 py-4 rounded-2xl border transition-all ${sparringFormat === value ? 'bg-indigo-600 border-indigo-500 text-white' : 'bg-slate-950 border-slate-800 text-slate-500 hover:text-white'}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
               </div>
               <button
                 disabled={!name.trim() || submitting}

@@ -2,6 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { Competitor, Match, BeltColor } from '../types';
 import type { TranslationKeys } from '../translations';
+import { computeTeamStandings } from '../services/teamStandings';
 
 type BeltView = 'Adult' | 'Kid';
 
@@ -28,50 +29,11 @@ const Dashboard: React.FC<DashboardProps> = ({ competitors, matches, t, onSelect
       }));
   }, [matches, competitors]);
 
-  const teamStandings = useMemo(() => {
-    const scores: Record<string, { total: number; gold: number; silver: number; bronze: number }> = {};
-    const categories = Array.from(new Set(matches.map(m => m.bracketId)));
-
-    categories.forEach(catId => {
-      const catMatches = matches.filter(m => m.bracketId === catId);
-      const maxRound = Math.max(...catMatches.map(m => m.round), 0);
-      if (maxRound === 0) return;
-
-      const finalMatch = catMatches.find(m => m.round === maxRound);
-      if (finalMatch && finalMatch.status === 'finished' && finalMatch.winnerId) {
-        const goldWinner = competitors.find(c => c.id === finalMatch.winnerId);
-        if (goldWinner?.team) {
-          if (!scores[goldWinner.team]) scores[goldWinner.team] = { total: 0, gold: 0, silver: 0, bronze: 0 };
-          scores[goldWinner.team].gold += 1;
-          scores[goldWinner.team].total += 9;
-        }
-
-        const silverId = finalMatch.winnerId === finalMatch.competitor1Id ? finalMatch.competitor2Id : finalMatch.competitor1Id;
-        const silverWinner = competitors.find(c => c.id === silverId);
-        if (silverWinner?.team) {
-          if (!scores[silverWinner.team]) scores[silverWinner.team] = { total: 0, gold: 0, silver: 0, bronze: 0 };
-          scores[silverWinner.team].silver += 1;
-          scores[silverWinner.team].total += 3;
-        }
-
-        const semiFinals = catMatches.filter(m => m.round === maxRound - 1 && maxRound > 1);
-        semiFinals.forEach(sf => {
-          const loserId = sf.winnerId === sf.competitor1Id ? sf.competitor2Id : sf.competitor1Id;
-          const bronzeWinner = competitors.find(c => c.id === loserId);
-          if (bronzeWinner?.team) {
-            if (!scores[bronzeWinner.team]) scores[bronzeWinner.team] = { total: 0, gold: 0, silver: 0, bronze: 0 };
-            scores[bronzeWinner.team].bronze += 1;
-            scores[bronzeWinner.team].total += 1;
-          }
-        });
-      }
-    });
-
-    return Object.entries(scores)
-      .map(([name, data]) => ({ name, ...data }))
-      .sort((a, b) => b.total - a.total)
-      .slice(0, 10);
-  }, [matches, competitors]);
+  // Delegates to services/teamStandings.ts (shared with the dedicated Teams
+  // page) so this widget stays correct for double-elimination and
+  // round-robin categories too, not just single-elimination's round/semifinal
+  // shape.
+  const teamStandings = useMemo(() => computeTeamStandings(matches, competitors).slice(0, 10), [matches, competitors]);
 
   const liveMatchesCount = matches.filter(m => m.status === 'ongoing').length;
   const academiesCount = new Set(competitors.map(c => c.team).filter(Boolean)).size;
@@ -127,18 +89,18 @@ const Dashboard: React.FC<DashboardProps> = ({ competitors, matches, t, onSelect
                 </thead>
                 <tbody className="divide-y divide-slate-800/50">
                   {teamStandings.map((team, idx) => (
-                    <tr key={team.name} className="group hover:bg-white/5 transition-colors">
+                    <tr key={team.team} className="group hover:bg-white/5 transition-colors">
                       <td className="py-5">
                         <div className="flex items-center gap-4">
                           <span className="text-[11px] font-black text-slate-600">#{idx+1}</span>
-                          <span className="text-sm font-bold text-white truncate">{team.name}</span>
+                          <span className="text-sm font-bold text-white truncate">{team.team}</span>
                         </div>
                       </td>
                       <td className="py-5 text-center font-black text-amber-500 text-lg">{team.gold}</td>
                       <td className="py-5 text-center font-black text-slate-300 text-lg">{team.silver}</td>
                       <td className="py-5 text-center font-black text-orange-700 text-lg">{team.bronze}</td>
                       <td className="py-5 text-right">
-                        <span className="px-4 py-1.5 bg-indigo-500/10 text-indigo-400 rounded-xl font-black text-xl border border-indigo-500/20">{team.total}</span>
+                        <span className="px-4 py-1.5 bg-indigo-500/10 text-indigo-400 rounded-xl font-black text-xl border border-indigo-500/20">{team.points}</span>
                       </td>
                     </tr>
                   ))}

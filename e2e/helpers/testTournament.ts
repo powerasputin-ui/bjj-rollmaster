@@ -13,7 +13,7 @@ export interface TestTournament {
 // it — the real two-step flow (account registration is separate from
 // tournament creation; an account may own several tournaments), via the real
 // /api/auth/register + /api/tournaments endpoints.
-export async function createTestTournament(request: APIRequestContext): Promise<TestTournament> {
+export async function createTestTournament(request: APIRequestContext, overrides?: { defaultBracketFormat?: 'single' | 'double' | 'round_robin'; sparringFormat?: 'gi' | 'nogi' | 'both' }): Promise<TestTournament> {
   const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const email = `e2e-${unique}@example.com`;
   const password = 'TestPassword123!';
@@ -29,7 +29,7 @@ export async function createTestTournament(request: APIRequestContext): Promise<
 
   const created = await request.post('/api/tournaments', {
     headers: { Authorization: `Bearer ${userToken}` },
-    data: { name: tournamentName },
+    data: { name: tournamentName, ...overrides },
   });
   if (!created.ok()) {
     throw new Error(`Failed to create test tournament: ${created.status()} ${await created.text()}`);

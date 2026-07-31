@@ -18,6 +18,9 @@ export interface Competitor {
   ageGroup: AgeGroup;
   isAbsolute?: boolean;
   madeWeight?: boolean;
+  competesGi?: boolean;
+  competesNoGi?: boolean;
+  ageCategoryId?: string | null;
   status?: CompetitorStatus;
 }
 
@@ -26,6 +29,8 @@ export interface Score {
   advantages: number;
   penalties: number;
 }
+
+export type BracketFormat = 'single' | 'double' | 'round_robin';
 
 export interface Match {
   id: string;
@@ -41,12 +46,31 @@ export interface Match {
   nextMatchId?: string;
   mat?: string;
   logs?: MatchEvent[];
+  format?: BracketFormat;
+  bracketSection?: 'winners' | 'losers' | 'final';
+  loserNextMatchId?: string | null;
+  nextMatchSlot?: 1 | 2;
+  loserNextMatchSlot?: 1 | 2;
 }
 
 export interface TimerConfig {
   roundDuration: number;
   restDuration: number;
   rounds: number;
+}
+
+export interface WeightCategory {
+  id: string;
+  ageGroup: AgeGroup;
+  name: string;
+  maxWeight: number | null;
+}
+
+export interface AgeCategory {
+  id: string;
+  ageGroup: AgeGroup;
+  name: string;
+  sortOrder: number;
 }
 
 // Ephemeral per-mat live scoreboard state, relayed over WebSocket while a match

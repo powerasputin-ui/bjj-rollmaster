@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { getDb, rowToCompetitor } from '../db/client.js';
 import { requireAuth } from '../middleware/requireAuth.js';
-import { isValidNewCompetitor } from '../validation.js';
+import { isValidNewCompetitor, isValidBelt, isValidAgeGroup } from '../validation.js';
 
 export const competitorsRouter = Router();
 
@@ -22,10 +22,19 @@ competitorsRouter.post('/', (req, res) => {
   const c = req.body;
   getDb()
     .prepare(
-      `INSERT INTO competitors (id, tournament_id, name, belt, weight, team, age_group, is_absolute, made_weight, status)
-       VALUES (@id, @tournamentId, @name, @belt, @weight, @team, @ageGroup, @isAbsolute, 0, 'approved')`
+      `INSERT INTO competitors (id, tournament_id, name, belt, weight, team, age_group, is_absolute, made_weight, competes_gi, competes_nogi, age_category_id, status)
+       VALUES (@id, @tournamentId, @name, @belt, @weight, @team, @ageGroup, @isAbsolute, 0, @competesGi, @competesNoGi, @ageCategoryId, 'approved')`
     )
-    .run({ ...c, tournamentId: req.tournamentId, isAbsolute: c.isAbsolute ? 1 : 0 });
+    .run({
+      ...c,
+      tournamentId: req.tournamentId,
+      isAbsolute: c.isAbsolute ? 1 : 0,
+      // Default gi-only when the caller doesn't specify — matches the schema
+      // default and keeps single-format tournaments (the common case) a no-op.
+      competesGi: c.competesGi === undefined ? 1 : (c.competesGi ? 1 : 0),
+      competesNoGi: c.competesNoGi === undefined ? 0 : (c.competesNoGi ? 1 : 0),
+      ageCategoryId: c.ageCategoryId ?? null,
+    });
 
   const row = getDb().prepare('SELECT * FROM competitors WHERE id = ? AND tournament_id = ?').get(c.id, req.tournamentId);
   res.status(201).json(rowToCompetitor(row as Parameters<typeof rowToCompetitor>[0]));
@@ -50,9 +59,33 @@ competitorsRouter.patch('/:id', (req, res) => {
     fields.push('is_absolute = @isAbsolute');
     params.isAbsolute = body.isAbsolute ? 1 : 0;
   }
+  if (typeof body.competesGi === 'boolean') {
+    fields.push('competes_gi = @competesGi');
+    params.competesGi = body.competesGi ? 1 : 0;
+  }
+  if (typeof body.competesNoGi === 'boolean') {
+    fields.push('competes_nogi = @competesNoGi');
+    params.competesNoGi = body.competesNoGi ? 1 : 0;
+  }
   if (typeof body.weight === 'string') {
     fields.push('weight = @weight');
     params.weight = body.weight;
+  }
+  // Lets an organizer move an athlete into a different age or weight
+  // category (e.g. nobody else showed up in their bracket) — mirrors
+  // Smoothcomp's "move registrations" tool, applied here directly as a field
+  // edit since ageGroup/weight/belt are exactly what determines bucketing.
+  if (isValidBelt(body.belt)) {
+    fields.push('belt = @belt');
+    params.belt = body.belt;
+  }
+  if (isValidAgeGroup(body.ageGroup)) {
+    fields.push('age_group = @ageGroup');
+    params.ageGroup = body.ageGroup;
+  }
+  if (typeof body.ageCategoryId === 'string' || body.ageCategoryId === null) {
+    fields.push('age_category_id = @ageCategoryId');
+    params.ageCategoryId = body.ageCategoryId;
   }
 
   if (fields.length === 0) {

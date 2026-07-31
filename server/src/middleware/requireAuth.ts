@@ -14,7 +14,7 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
   }
   try {
     const payload = verifySession(token);
-    if (!payload.tournamentId) {
+    if (payload.kind !== 'tournament' || !payload.tournamentId) {
       res.status(401).json({ error: 'unauthorized' });
       return;
     }

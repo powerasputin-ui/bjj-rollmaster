@@ -8,6 +8,8 @@ import { competitorsRouter } from './routes/competitors.js';
 import { registrationsRouter } from './routes/registrations.js';
 import { matchesRouter } from './routes/matches.js';
 import { timerConfigRouter } from './routes/timerConfig.js';
+import { weightCategoriesRouter } from './routes/weightCategories.js';
+import { ageCategoriesRouter } from './routes/ageCategories.js';
 import { adminRouter } from './routes/admin.js';
 import { authRouter } from './routes/auth.js';
 import { tournamentsRouter } from './routes/tournaments.js';
@@ -33,6 +35,8 @@ export function createApp() {
   app.use('/api/registrations', registrationsRouter);
   app.use('/api/matches', matchesRouter);
   app.use('/api/timer-config', timerConfigRouter);
+  app.use('/api/weight-categories', weightCategoriesRouter);
+  app.use('/api/age-categories', ageCategoriesRouter);
   app.use('/api', adminRouter);
 
   // In production the built frontend (`dist/`, produced by `vite build`) sits two

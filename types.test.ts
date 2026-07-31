@@ -1,46 +1,69 @@
 import { describe, it, expect } from 'vitest';
 import {
   getWeightCategoryKey,
-  WEIGHT_ORDER,
+  orderedCategoryIds,
   BELT_RANK,
   type Competitor,
   type Match,
   type TimerConfig,
+  type WeightCategory,
 } from './types';
+
+// Mirrors the old hardcoded boundaries (server/src/db/client.ts's
+// DEFAULT_WEIGHT_CATEGORIES), just as a local WeightCategory[] fixture with
+// stable test ids, now that categories are per-tournament data rather than a
+// global constant.
+const rooster: WeightCategory = { id: 'adult-rooster', ageGroup: 'Adult', name: 'Rooster', maxWeight: 57.5 };
+const lightFeather: WeightCategory = { id: 'adult-light-feather', ageGroup: 'Adult', name: 'Light Feather', maxWeight: 64 };
+const ultraHeavy: WeightCategory = { id: 'adult-ultra-heavy', ageGroup: 'Adult', name: 'Ultra Heavy', maxWeight: null };
+const kidTiny: WeightCategory = { id: 'kid-tiny', ageGroup: 'Kid', name: 'Kids Tiny', maxWeight: 20 };
+const kidSmall: WeightCategory = { id: 'kid-small', ageGroup: 'Kid', name: 'Kids Small', maxWeight: 30 };
+const kidMedium: WeightCategory = { id: 'kid-medium', ageGroup: 'Kid', name: 'Kids Medium', maxWeight: 45 };
+const kidLarge: WeightCategory = { id: 'kid-large', ageGroup: 'Kid', name: 'Kids Large', maxWeight: 60 };
+
+const fixtureCategories: WeightCategory[] = [rooster, lightFeather, ultraHeavy, kidTiny, kidSmall, kidMedium, kidLarge];
 
 describe('getWeightCategoryKey', () => {
   it('returns rooster for adult <= 57.5 kg', () => {
-    expect(getWeightCategoryKey('57.5', 'Adult')).toBe('rooster');
-    expect(getWeightCategoryKey('50', 'Adult')).toBe('rooster');
+    expect(getWeightCategoryKey('57.5', 'Adult', fixtureCategories)).toBe(rooster.id);
+    expect(getWeightCategoryKey('50', 'Adult', fixtureCategories)).toBe(rooster.id);
   });
 
   it('returns lightFeather for adult 57.5-64 kg', () => {
-    expect(getWeightCategoryKey('64', 'Adult')).toBe('lightFeather');
-    expect(getWeightCategoryKey('60', 'Adult')).toBe('lightFeather');
+    expect(getWeightCategoryKey('64', 'Adult', fixtureCategories)).toBe(lightFeather.id);
+    expect(getWeightCategoryKey('60', 'Adult', fixtureCategories)).toBe(lightFeather.id);
   });
 
-  it('returns ultraHeavy for adult > 100.5 kg', () => {
-    expect(getWeightCategoryKey('110', 'Adult')).toBe('ultraHeavy');
+  it('returns the null-maxWeight (no limit) category for adult > every configured boundary', () => {
+    expect(getWeightCategoryKey('110', 'Adult', fixtureCategories)).toBe(ultraHeavy.id);
   });
 
   it('returns unknown for invalid weight', () => {
-    expect(getWeightCategoryKey('', 'Adult')).toBe('unknown');
-    expect(getWeightCategoryKey('abc', 'Adult')).toBe('unknown');
+    expect(getWeightCategoryKey('', 'Adult', fixtureCategories)).toBe('unknown');
+    expect(getWeightCategoryKey('abc', 'Adult', fixtureCategories)).toBe('unknown');
   });
 
   it('returns kid categories for Kid age group', () => {
-    expect(getWeightCategoryKey('15', 'Kid')).toBe('kidTiny');
-    expect(getWeightCategoryKey('25', 'Kid')).toBe('kidSmall');
-    expect(getWeightCategoryKey('40', 'Kid')).toBe('kidMedium');
-    expect(getWeightCategoryKey('50', 'Kid')).toBe('kidLarge');
+    expect(getWeightCategoryKey('15', 'Kid', fixtureCategories)).toBe(kidTiny.id);
+    expect(getWeightCategoryKey('25', 'Kid', fixtureCategories)).toBe(kidSmall.id);
+    expect(getWeightCategoryKey('40', 'Kid', fixtureCategories)).toBe(kidMedium.id);
+    expect(getWeightCategoryKey('50', 'Kid', fixtureCategories)).toBe(kidLarge.id);
+  });
+
+  it('falls back to unknown when the age group has no open-ended (no limit) category configured', () => {
+    const noOpenCategory: WeightCategory[] = [{ id: 'kid-only-bounded', ageGroup: 'Kid', name: 'Only Bounded', maxWeight: 30 }];
+    expect(getWeightCategoryKey('999', 'Kid', noOpenCategory)).toBe('unknown');
+  });
+
+  it('returns unknown when no categories are configured for the age group at all', () => {
+    expect(getWeightCategoryKey('70', 'Adult', [])).toBe('unknown');
   });
 });
 
-describe('WEIGHT_ORDER', () => {
-  it('has expected adult weight keys', () => {
-    expect(WEIGHT_ORDER['rooster']).toBe(1);
-    expect(WEIGHT_ORDER['ultraHeavy']).toBe(9);
-    expect(WEIGHT_ORDER['absolute']).toBe(100);
+describe('orderedCategoryIds', () => {
+  it('sorts ascending by maxWeight with the null (no limit) category last', () => {
+    expect(orderedCategoryIds(fixtureCategories, 'Adult')).toEqual([rooster.id, lightFeather.id, ultraHeavy.id]);
+    expect(orderedCategoryIds(fixtureCategories, 'Kid')).toEqual([kidTiny.id, kidSmall.id, kidMedium.id, kidLarge.id]);
   });
 });
 

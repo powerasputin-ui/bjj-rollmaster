@@ -27,9 +27,14 @@ const PublicCatalog: React.FC<PublicCatalogProps> = ({ t }) => {
             <h1 className="text-2xl font-black text-white tracking-tight uppercase">{t.publicCatalogTitle}</h1>
             <p className="text-slate-500 text-sm mt-1">{t.publicCatalogSub}</p>
           </div>
-          <a href="?login=true" className="text-[10px] font-black text-indigo-400 hover:text-white uppercase tracking-widest shrink-0">
-            {t.organizerLoginLink}
-          </a>
+          <div className="flex flex-col items-end gap-2 shrink-0">
+            <a href="?login=true" className="text-[10px] font-black text-indigo-400 hover:text-white uppercase tracking-widest">
+              {t.organizerLoginLink}
+            </a>
+            <a href="?cabinet=true" className="text-[10px] font-black text-indigo-400 hover:text-white uppercase tracking-widest">
+              {t.cabinetLink}
+            </a>
+          </div>
         </div>
 
         {tournaments === null && (
@@ -50,12 +55,20 @@ const PublicCatalog: React.FC<PublicCatalogProps> = ({ t }) => {
                     {[tour.eventDate, tour.location].filter(Boolean).join(' · ') || '—'}
                   </p>
                 </div>
-                <a
-                  href={`?register=true&t=${tour.slug}`}
-                  className="shrink-0 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black uppercase tracking-widest px-6 py-3 rounded-2xl transition-all active:scale-95"
-                >
-                  {t.registerForTournament}
-                </a>
+                <div className="shrink-0 flex items-center gap-3">
+                  <a
+                    href={`?live=true&t=${tour.slug}`}
+                    className="text-slate-500 hover:text-white text-[10px] font-black uppercase tracking-widest"
+                  >
+                    {t.viewLiveLink}
+                  </a>
+                  <a
+                    href={`?register=true&t=${tour.slug}`}
+                    className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black uppercase tracking-widest px-6 py-3 rounded-2xl transition-all active:scale-95"
+                  >
+                    {t.registerForTournament}
+                  </a>
+                </div>
               </div>
             ))}
           </div>
