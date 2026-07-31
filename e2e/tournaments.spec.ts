@@ -40,7 +40,7 @@ test.describe('Multi-tournament accounts and the public catalog', () => {
     await expect(page.locator(`text=${created2.tournament.name}`)).toBeVisible({ timeout: 8000 });
 
     // Open tournament 1, verify its roster.
-    await page.locator(`text=${created1.tournament.name}`).locator('xpath=ancestor::div[contains(@class,"rounded-2xl")]').getByRole('button', { name: /Open|Открыть/i }).click();
+    await page.locator(`text=${created1.tournament.name}`).locator('xpath=ancestor::div[contains(@class,"rounded-3xl")]').getByRole('button', { name: /Open|Открыть/i }).click();
     await page.getByTitle(/Athletes|Атлеты/i).click();
     await expect(page.locator('text=Athlete One')).toBeVisible({ timeout: 8000 });
     await expect(page.locator('text=Athlete Two')).toHaveCount(0);
@@ -49,7 +49,7 @@ test.describe('Multi-tournament accounts and the public catalog', () => {
     await page.getByTitle(/Settings|Настройки/i).click();
     await page.getByRole('button', { name: /Switch tournament|Сменить турнир/i }).click();
     await expect(page.locator(`text=${created2.tournament.name}`)).toBeVisible({ timeout: 8000 });
-    await page.locator(`text=${created2.tournament.name}`).locator('xpath=ancestor::div[contains(@class,"rounded-2xl")]').getByRole('button', { name: /Open|Открыть/i }).click();
+    await page.locator(`text=${created2.tournament.name}`).locator('xpath=ancestor::div[contains(@class,"rounded-3xl")]').getByRole('button', { name: /Open|Открыть/i }).click();
     await page.getByTitle(/Athletes|Атлеты/i).click();
     await expect(page.locator('text=Athlete Two')).toBeVisible({ timeout: 8000 });
     await expect(page.locator('text=Athlete One')).toHaveCount(0);
@@ -66,7 +66,7 @@ test.describe('Multi-tournament accounts and the public catalog', () => {
     await page.goto('/');
     await expect(page.locator(`text=${created.tournament.name}`)).toBeVisible({ timeout: 8000 });
 
-    await page.locator(`text=${created.tournament.name}`).locator('xpath=ancestor::div[contains(@class,"rounded-2xl")]').getByRole('link', { name: /Register|Зарегистрироваться/i }).click();
+    await page.locator(`text=${created.tournament.name}`).locator('xpath=ancestor::div[contains(@class,"rounded-3xl")]').getByRole('link', { name: /Register|Зарегистрироваться/i }).click();
     await expect(page.locator('h1')).toContainText(/Tournament Registration|Регистрация на турнир/i);
   });
 

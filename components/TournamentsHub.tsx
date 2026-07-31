@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import type { TranslationKeys } from '../translations';
 import { api, type TournamentInfo } from '../services/api';
-import LiquidBackground from './LiquidBackground';
 
 interface TournamentsHubProps {
   t: TranslationKeys;
@@ -81,41 +80,40 @@ const TournamentsHub: React.FC<TournamentsHubProps> = ({ t, onOpenTournament, on
     return 'bg-amber-500/10 text-amber-400 border-amber-500/20';
   };
 
-  const inputClass = "w-full px-5 py-3 rounded-xl bg-white/10 text-white placeholder-gray-400 text-sm outline-none focus:ring-2 focus:ring-white/30 transition-shadow";
-  const labelClass = "text-[10px] font-black text-gray-500 uppercase tracking-widest ml-1";
+  const inputClass = "w-full bg-slate-950 border border-slate-800 text-white rounded-2xl p-5 font-black outline-none focus:border-indigo-500 transition-colors shadow-inner text-sm";
+  const labelClass = "text-[10px] font-black text-slate-600 uppercase tracking-widest ml-4";
 
   return (
-    <div className="relative min-h-screen bg-[#121212] overflow-hidden">
-      <LiquidBackground />
-      <div className="relative z-10 max-w-2xl mx-auto p-6 py-16">
-        <div className="flex items-center justify-between mb-10 gap-4">
+    <div className="min-h-screen bjj-gradient p-6 py-12">
+      <div className="max-w-2xl mx-auto">
+        <div className="flex items-center justify-between mb-8 gap-4">
           <div className="min-w-0">
-            <h1 className="text-2xl font-semibold text-white">{t.tournamentsHubTitle}</h1>
-            <p className="text-gray-400 text-sm mt-1">{t.tournamentsHubSub}</p>
+            <h1 className="text-2xl font-black text-white tracking-tight uppercase">{t.tournamentsHubTitle}</h1>
+            <p className="text-slate-500 text-sm mt-1">{t.tournamentsHubSub}</p>
           </div>
-          <button onClick={onLogout} className="text-xs font-medium text-gray-400 hover:text-white shrink-0">{t.authLogout}</button>
+          <button onClick={onLogout} className="text-[10px] font-black text-slate-500 hover:text-white uppercase tracking-widest shrink-0">{t.authLogout}</button>
         </div>
 
-        {error && <p className="mb-6 text-sm text-red-400 text-center">{error}</p>}
+        {error && <p className="mb-6 text-sm text-red-500 font-bold text-center">{error}</p>}
 
         {tournaments !== null && tournaments.length > 0 && (
           <div className="space-y-4 mb-8">
             {tournaments.map(tour => (
-              <div key={tour.id} className="rounded-2xl bg-gradient-to-r from-[#ffffff10] to-[#121212] backdrop-blur-sm border border-white/10 p-6 flex items-center justify-between gap-4">
+              <div key={tour.id} className="bg-slate-900 border border-slate-800/80 rounded-3xl p-6 flex items-center justify-between gap-4 shadow-2xl">
                 <div className="min-w-0">
                   <div className="flex items-center gap-3 flex-wrap">
-                    <h3 className="text-white font-semibold truncate">{tour.name}</h3>
-                    <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-full border shrink-0 ${statusColor(tour.status)}`}>{statusLabel(tour.status)}</span>
+                    <h3 className="text-white font-black truncate">{tour.name}</h3>
+                    <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-full border shrink-0 ${statusColor(tour.status)}`}>{statusLabel(tour.status)}</span>
                   </div>
-                  <p className="text-gray-400 text-xs mt-1 truncate">
+                  <p className="text-slate-500 text-xs mt-1 truncate">
                     {[tour.eventDate, tour.location].filter(Boolean).join(' · ') || '—'}
                   </p>
                 </div>
-                <div className="flex flex-col gap-2 shrink-0">
+                <div className="flex flex-col items-end gap-2 shrink-0">
                   <button
                     disabled={openingId === tour.id}
                     onClick={() => openTournament(tour.id)}
-                    className="bg-white/10 hover:bg-white/20 text-white text-xs font-medium px-5 py-3 rounded-full transition disabled:opacity-50"
+                    className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black uppercase tracking-widest px-6 py-3 rounded-2xl transition-all active:scale-95 disabled:opacity-50"
                   >
                     {t.openTournamentButton}
                   </button>
@@ -123,7 +121,7 @@ const TournamentsHub: React.FC<TournamentsHubProps> = ({ t, onOpenTournament, on
                     <button
                       disabled={togglingId === tour.id}
                       onClick={() => togglePublish(tour)}
-                      className="text-[10px] font-medium text-gray-400 hover:text-white transition disabled:opacity-50"
+                      className="text-[10px] font-black text-slate-500 hover:text-white uppercase tracking-widest transition disabled:opacity-50"
                     >
                       {tour.status === 'published' ? t.unpublishButton : t.publishButton}
                     </button>
@@ -135,25 +133,38 @@ const TournamentsHub: React.FC<TournamentsHubProps> = ({ t, onOpenTournament, on
         )}
 
         {tournaments !== null && tournaments.length === 0 && !showCreate && (
-          <p className="text-center text-gray-500 text-sm mb-8">{t.noTournamentsYet}</p>
+          <p className="text-center text-slate-500 text-sm mb-8">{t.noTournamentsYet}</p>
         )}
 
-        <div className="rounded-2xl bg-gradient-to-r from-[#ffffff10] to-[#121212] backdrop-blur-sm border border-white/10 p-6">
+        <div className="bg-slate-900 border border-slate-800/80 rounded-3xl p-8 shadow-2xl">
           {!showCreate ? (
-            <button onClick={() => setShowCreate(true)} className="w-full bg-white/10 hover:bg-white/20 text-white text-sm font-medium px-5 py-3 rounded-full transition">
+            <button onClick={() => setShowCreate(true)} className="w-full bg-slate-800 hover:bg-slate-700 text-white text-xs font-black uppercase tracking-widest px-6 py-4 rounded-2xl transition-all active:scale-95">
               + {t.createTournamentButton}
             </button>
           ) : (
-            <div className="flex flex-col gap-3">
-              <h3 className="text-white font-semibold mb-1">{t.createTournamentTitle}</h3>
-              <input placeholder={t.tournamentNameLabel} value={name} onChange={e => setName(e.target.value)} className={inputClass} />
-              <div className="space-y-1">
+            <div className="flex flex-col gap-6">
+              <h3 className="text-white font-black uppercase tracking-tight">{t.createTournamentTitle}</h3>
+              <div className="space-y-2">
+                <label className={labelClass}>{t.tournamentNameLabel}</label>
+                <input value={name} onChange={e => setName(e.target.value)} className={inputClass} />
+              </div>
+              <div className="space-y-2">
                 <label className={labelClass}>{t.tournamentDateLabel}</label>
                 <input type="date" value={eventDate} onChange={e => setEventDate(e.target.value)} className={inputClass} />
               </div>
-              <input placeholder={t.tournamentLocationLabel} value={location} onChange={e => setLocation(e.target.value)} className={inputClass} />
-              <textarea placeholder={t.tournamentDescriptionLabel} value={description} onChange={e => setDescription(e.target.value)} rows={2} className={`${inputClass} resize-none`} />
-              <button disabled={!name.trim() || submitting} onClick={createTournament} className="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium px-5 py-3 rounded-full transition disabled:opacity-50">
+              <div className="space-y-2">
+                <label className={labelClass}>{t.tournamentLocationLabel}</label>
+                <input value={location} onChange={e => setLocation(e.target.value)} className={inputClass} />
+              </div>
+              <div className="space-y-2">
+                <label className={labelClass}>{t.tournamentDescriptionLabel}</label>
+                <textarea value={description} onChange={e => setDescription(e.target.value)} rows={2} className={`${inputClass} resize-none`} />
+              </div>
+              <button
+                disabled={!name.trim() || submitting}
+                onClick={createTournament}
+                className={`w-full py-5 rounded-2xl font-black uppercase text-xs tracking-[0.2em] transition-all ${name.trim() && !submitting ? 'bg-indigo-600 text-white shadow-xl hover:bg-indigo-500 active:scale-95' : 'bg-slate-800 text-slate-600 cursor-not-allowed opacity-50 grayscale'}`}
+              >
                 {t.createTournamentButton}
               </button>
             </div>
