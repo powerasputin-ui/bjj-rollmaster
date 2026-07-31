@@ -53,17 +53,6 @@ const PublicRegister: React.FC<PublicRegisterProps> = ({ t, slug }) => {
     }
   };
 
-  if (!slug) {
-    return (
-      <div className="h-screen flex items-center justify-center p-6">
-        <div className="bg-slate-900 border border-red-500/30 rounded-[3rem] p-12 max-w-lg w-full text-center shadow-2xl">
-          <h2 className="text-2xl font-black text-white mb-3">404</h2>
-          <p className="text-slate-400">{t.authErrorGeneric}</p>
-        </div>
-      </div>
-    );
-  }
-
   if (submitted) {
     return (
       <div className="h-screen flex items-center justify-center p-6">

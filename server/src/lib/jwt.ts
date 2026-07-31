@@ -1,8 +1,12 @@
 import jwt from 'jsonwebtoken';
 
+// tournamentId is present only on a "tournament-token" (minted when an
+// organizer creates or selects one of their tournaments) — a bare
+// "user-token" from login/register omits it and identifies just the person,
+// since one account can now own many tournaments.
 export interface SessionPayload {
   sub: string;
-  tournamentId: string;
+  tournamentId?: string;
   email: string;
 }
 

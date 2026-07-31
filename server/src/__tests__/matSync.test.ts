@@ -45,12 +45,14 @@ const sampleState = {
 
 beforeAll(async () => {
   const db = getDb();
+  const ownerId = crypto.randomUUID();
+  db.prepare('INSERT INTO users (id, email, password_hash) VALUES (?, ?, ?)').run(ownerId, 'matsync-owner@example.com', 'x');
   const idA = crypto.randomUUID();
   const idB = crypto.randomUUID();
   slugA = 'tournament-a-' + crypto.randomBytes(3).toString('hex');
   slugB = 'tournament-b-' + crypto.randomBytes(3).toString('hex');
-  db.prepare('INSERT INTO tournaments (id, name, slug) VALUES (?, ?, ?)').run(idA, 'Tournament A', slugA);
-  db.prepare('INSERT INTO tournaments (id, name, slug) VALUES (?, ?, ?)').run(idB, 'Tournament B', slugB);
+  db.prepare('INSERT INTO tournaments (id, owner_user_id, name, slug) VALUES (?, ?, ?, ?)').run(idA, ownerId, 'Tournament A', slugA);
+  db.prepare('INSERT INTO tournaments (id, owner_user_id, name, slug) VALUES (?, ?, ?, ?)').run(idB, ownerId, 'Tournament B', slugB);
 
   server = http.createServer();
   attachMatSync(server);

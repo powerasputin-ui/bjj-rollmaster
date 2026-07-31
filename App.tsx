@@ -9,8 +9,15 @@ import BracketView from './components/BracketView';
 import PublicRegister from './components/PublicRegister';
 import PendingRegistrations from './components/PendingRegistrations';
 import AuthScreen from './components/AuthScreen';
+import TournamentsHub from './components/TournamentsHub';
+import PublicCatalog from './components/PublicCatalog';
 import { translations } from './translations';
-import { api, publicApi, getSessionToken, setSessionToken, clearSessionToken, type TournamentInfo } from './services/api';
+import {
+  api, publicApi,
+  getUserToken, setUserToken, clearUserToken,
+  getSessionToken, setSessionToken, clearSessionToken,
+  type TournamentInfo,
+} from './services/api';
 
 const DEFAULT_TIMER_CONFIG: TimerConfig = { roundDuration: 300, restDuration: 60, rounds: 1 };
 const POLL_INTERVAL_MS = 4000;
@@ -42,6 +49,8 @@ const App: React.FC = () => {
   const [copiedFlash, setCopiedFlash] = useState(false);
 
   const [tournament, setTournament] = useState<TournamentInfo | null>(null);
+  const [hasUserToken, setHasUserToken] = useState(false);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -49,32 +58,49 @@ const App: React.FC = () => {
   const isDisplayMode = urlParams.has('display');
   const isRegisterMode = urlParams.has('register');
   const resetToken = urlParams.get('resetToken');
+  const isLoginMode = urlParams.has('login') || !!resetToken;
   const publicSlug = urlParams.get('t') || '';
   const urlLang = urlParams.get('lang');
   const displayLang = urlLang === 'en' || urlLang === 'ru' ? urlLang : detectLanguage();
-  const t = (isDisplayMode || isRegisterMode || (!authChecked || !tournament)) ? translations[displayLang] : translations[language];
+  const t = (isDisplayMode || isRegisterMode || (!authChecked || !hasUserToken || !tournament)) ? translations[displayLang] : translations[language];
 
   useEffect(() => {
     if (isDisplayMode) setCurrentView(View.TIMER);
   }, [isDisplayMode]);
 
   // Restore the organizer's session on load (skipped entirely for the public
-  // register/display modes, which never require a login).
+  // register/display modes, which never require a login). Two tiers: the
+  // user-token (account identity) is validated first, then — if an active
+  // tournament session-token also exists from a prior visit — its details are
+  // fetched too, so a reload doesn't dump the organizer back into the hub.
   useEffect(() => {
     if (isRegisterMode || isDisplayMode) {
       setAuthChecked(true);
       return;
     }
-    const token = getSessionToken();
-    if (!token) {
+    const uToken = getUserToken();
+    if (!uToken) {
       setAuthChecked(true);
       return;
     }
-    api.me().then(res => {
-      if (res.ok === true) setTournament(res.data.tournament);
-      else clearSessionToken();
+    (async () => {
+      const meRes = await api.me();
+      if (meRes.ok !== true) {
+        clearUserToken();
+        clearSessionToken();
+        setAuthChecked(true);
+        return;
+      }
+      setHasUserToken(true);
+      setUserEmail(meRes.data.email);
+
+      if (getSessionToken()) {
+        const tRes = await api.getCurrentTournament();
+        if (tRes.ok === true) setTournament(tRes.data);
+        else clearSessionToken();
+      }
       setAuthChecked(true);
-    });
+    })();
   }, [isRegisterMode, isDisplayMode]);
 
   // Authenticated organizer data — polls the session-scoped REST API.
@@ -123,12 +149,30 @@ const App: React.FC = () => {
     return () => { cancelled = true; clearInterval(interval); };
   }, [isDisplayMode, publicSlug]);
 
-  const handleAuthenticated = (token: string, tournamentInfo: TournamentInfo) => {
+  const handleAuthenticated = async (token: string) => {
+    setUserToken(token);
+    setHasUserToken(true);
+    const meRes = await api.me();
+    if (meRes.ok === true) setUserEmail(meRes.data.email);
+  };
+
+  const handleOpenTournament = (token: string, tournamentInfo: TournamentInfo) => {
     setSessionToken(token);
     setTournament(tournamentInfo);
   };
 
+  const handleSwitchTournament = () => {
+    clearSessionToken();
+    setTournament(null);
+    setCompetitors([]);
+    setMatches([]);
+    setTimerConfig(DEFAULT_TIMER_CONFIG);
+    setPendingRegistrations([]);
+    setCurrentView(View.DASHBOARD);
+  };
+
   const handleLogout = () => {
+    clearUserToken();
     clearSessionToken();
     window.location.reload();
   };
@@ -297,8 +341,10 @@ const App: React.FC = () => {
   };
 
   // Public self-registration page — no nav, no roster/match data, reachable via a
-  // shared link/QR code at the venue.
+  // shared link/QR code at the venue. Without a specific tournament slug, fall
+  // back to the public catalog so the athlete can find one first.
   if (isRegisterMode) {
+    if (!publicSlug) return <PublicCatalog t={t} />;
     return (
       <div className="min-h-screen bjj-gradient">
         <PublicRegister t={t} slug={publicSlug} />
@@ -329,8 +375,17 @@ const App: React.FC = () => {
     return <div className="h-screen bjj-gradient" />;
   }
 
+  // Smoothcomp-style default: the bare site is a public tournament catalog
+  // for athletes. Organizer sign-in is a deliberately separate path
+  // (?login=true, or a password-reset link) rather than the default landing.
+  if (!hasUserToken) {
+    return isLoginMode
+      ? <AuthScreen t={t} initialResetToken={resetToken} onAuthenticated={handleAuthenticated} />
+      : <PublicCatalog t={t} />;
+  }
+
   if (!tournament) {
-    return <AuthScreen t={t} initialResetToken={resetToken} onAuthenticated={handleAuthenticated} />;
+    return <TournamentsHub t={t} onOpenTournament={handleOpenTournament} onLogout={handleLogout} />;
   }
 
   function renderView() {
@@ -382,10 +437,16 @@ const App: React.FC = () => {
 
             <section className="bg-slate-900/50 border border-slate-800 rounded-3xl p-8">
               <h3 className="text-sm font-black uppercase text-slate-500 mb-6 tracking-widest">{t.authAccount}</h3>
-              <p className="text-white font-bold mb-4">{tournament.name}</p>
-              <button onClick={handleLogout} className="bg-slate-800 hover:bg-slate-700 text-white px-6 py-3 rounded-xl font-black uppercase text-xs tracking-widest transition-all active:scale-95">
-                {t.authLogout}
-              </button>
+              {userEmail && <p className="text-white font-bold mb-1">{userEmail}</p>}
+              <p className="text-slate-500 text-xs mb-4">{tournament.name}</p>
+              <div className="flex flex-wrap gap-3">
+                <button onClick={handleSwitchTournament} className="bg-slate-800 hover:bg-slate-700 text-white px-6 py-3 rounded-xl font-black uppercase text-xs tracking-widest transition-all active:scale-95">
+                  {t.switchTournamentButton}
+                </button>
+                <button onClick={handleLogout} className="bg-slate-800 hover:bg-slate-700 text-white px-6 py-3 rounded-xl font-black uppercase text-xs tracking-widest transition-all active:scale-95">
+                  {t.authLogout}
+                </button>
+              </div>
             </section>
 
             <section className="bg-slate-900/50 border border-slate-800 rounded-3xl p-8">

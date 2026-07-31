@@ -12,12 +12,19 @@ let slug: string;
 let authHeader: { Authorization: string };
 
 beforeAll(async () => {
-  const res = await request(app)
+  const register = await request(app)
     .post('/api/auth/register')
-    .send({ email: 'organizer@example.com', password: 'hunter22', tournamentName: 'Test Open' });
-  expect(res.status).toBe(201);
-  token = res.body.token;
-  slug = res.body.tournament.slug;
+    .send({ email: 'organizer@example.com', password: 'hunter22' });
+  expect(register.status).toBe(201);
+  const userToken = register.body.token;
+
+  const created = await request(app)
+    .post('/api/tournaments')
+    .set({ Authorization: `Bearer ${userToken}` })
+    .send({ name: 'Test Open' });
+  expect(created.status).toBe(201);
+  token = created.body.token;
+  slug = created.body.tournament.slug;
   authHeader = { Authorization: `Bearer ${token}` };
 });
 

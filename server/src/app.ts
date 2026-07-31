@@ -10,6 +10,8 @@ import { matchesRouter } from './routes/matches.js';
 import { timerConfigRouter } from './routes/timerConfig.js';
 import { adminRouter } from './routes/admin.js';
 import { authRouter } from './routes/auth.js';
+import { tournamentsRouter } from './routes/tournaments.js';
+import { currentTournamentRouter } from './routes/currentTournament.js';
 import { publicRouter } from './routes/public.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -24,6 +26,8 @@ export function createApp() {
   app.use(express.json({ limit: '5mb' }));
 
   app.use('/api/auth', authRouter);
+  app.use('/api/tournaments', tournamentsRouter);
+  app.use('/api/tournament', currentTournamentRouter);
   app.use('/api/public', publicRouter);
   app.use('/api/competitors', competitorsRouter);
   app.use('/api/registrations', registrationsRouter);

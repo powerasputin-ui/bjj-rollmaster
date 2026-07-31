@@ -3,10 +3,9 @@ import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import bcrypt from 'bcryptjs';
 import { OAuth2Client } from 'google-auth-library';
-import { getDb, createTimerConfigRow } from '../db/client.js';
-import { requireAuth } from '../middleware/requireAuth.js';
+import { getDb } from '../db/client.js';
+import { requireUserAuth } from '../middleware/requireUserAuth.js';
 import { signSession } from '../lib/jwt.js';
-import { slugify } from '../lib/slug.js';
 import { sendPasswordResetEmail } from '../lib/email.js';
 
 export const authRouter = Router();
@@ -47,63 +46,28 @@ const forgotPasswordLimiter = rateLimit({
   message: { error: 'too_many_attempts' },
 });
 
-interface TournamentRow {
-  id: string;
-  name: string;
-  slug: string;
-}
-
 interface UserRow {
   id: string;
   email: string;
   password_hash: string | null;
   google_id: string | null;
-  tournament_id: string;
 }
 
 function isValidEmail(email: unknown): email is string {
   return typeof email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-function createTournamentAndUser(params: {
-  email: string;
-  tournamentName: string;
-  passwordHash: string | null;
-  googleId: string | null;
-}): { userId: string; tournament: TournamentRow } {
-  const db = getDb();
-  const tournamentId = crypto.randomUUID();
-  const userId = crypto.randomUUID();
-  const slug = slugify(params.tournamentName);
-
-  const tx = db.transaction(() => {
-    db.prepare('INSERT INTO tournaments (id, name, slug) VALUES (?, ?, ?)').run(tournamentId, params.tournamentName, slug);
-    createTimerConfigRow(tournamentId);
-    db.prepare(
-      'INSERT INTO users (id, email, password_hash, google_id, tournament_id) VALUES (?, ?, ?, ?, ?)'
-    ).run(userId, params.email, params.passwordHash, params.googleId, tournamentId);
-  });
-  tx();
-
-  return { userId, tournament: { id: tournamentId, name: params.tournamentName, slug } };
-}
-
-function tournamentForUser(tournamentId: string): TournamentRow {
-  return getDb().prepare('SELECT id, name, slug FROM tournaments WHERE id = ?').get(tournamentId) as TournamentRow;
-}
-
+// Registering (or first-time Google sign-in) only creates the account — a
+// tournament is a separate thing an organizer creates afterwards from their
+// tournament hub (see routes/tournaments.ts), and one account may own many.
 authRouter.post('/register', registerLimiter, async (req, res) => {
-  const { email, password, tournamentName } = req.body as { email?: unknown; password?: unknown; tournamentName?: unknown };
+  const { email, password } = req.body as { email?: unknown; password?: unknown };
   if (!isValidEmail(email)) {
     res.status(400).json({ error: 'invalid_email' });
     return;
   }
   if (typeof password !== 'string' || password.length < 8) {
     res.status(400).json({ error: 'weak_password' });
-    return;
-  }
-  if (typeof tournamentName !== 'string' || !tournamentName.trim()) {
-    res.status(400).json({ error: 'invalid_tournament_name' });
     return;
   }
 
@@ -115,15 +79,11 @@ authRouter.post('/register', registerLimiter, async (req, res) => {
 
   try {
     const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
-    const { userId, tournament } = createTournamentAndUser({
-      email,
-      tournamentName: tournamentName.trim(),
-      passwordHash,
-      googleId: null,
-    });
+    const userId = crypto.randomUUID();
+    getDb().prepare('INSERT INTO users (id, email, password_hash) VALUES (?, ?, ?)').run(userId, email, passwordHash);
 
-    const token = signSession({ sub: userId, tournamentId: tournament.id, email });
-    res.status(201).json({ token, tournament });
+    const token = signSession({ sub: userId, email });
+    res.status(201).json({ token });
   } catch (err) {
     // The SELECT check above has a TOCTOU gap — two concurrent registrations
     // with the same email can both pass it before either INSERT commits.
@@ -156,8 +116,8 @@ authRouter.post('/login', loginLimiter, async (req, res) => {
       return;
     }
 
-    const token = signSession({ sub: user.id, tournamentId: user.tournament_id, email: user.email });
-    res.json({ token, tournament: tournamentForUser(user.tournament_id) });
+    const token = signSession({ sub: user.id, email: user.email });
+    res.json({ token });
   } catch (err) {
     console.error('Login failed', err);
     res.status(500).json({ error: 'internal_error' });
@@ -171,7 +131,7 @@ authRouter.post('/google', loginLimiter, async (req, res) => {
     return;
   }
 
-  const { credential, tournamentName } = req.body as { credential?: unknown; tournamentName?: unknown };
+  const { credential } = req.body as { credential?: unknown };
   if (typeof credential !== 'string' || !credential) {
     res.status(400).json({ error: 'invalid_credential' });
     return;
@@ -205,23 +165,15 @@ authRouter.post('/google', loginLimiter, async (req, res) => {
     }
 
     if (!user) {
-      if (typeof tournamentName !== 'string' || !tournamentName.trim()) {
-        res.status(400).json({ error: 'tournament_name_required' });
-        return;
-      }
-      const { userId, tournament } = createTournamentAndUser({
-        email: payload.email,
-        tournamentName: tournamentName.trim(),
-        passwordHash: null,
-        googleId: payload.sub,
-      });
-      const token = signSession({ sub: userId, tournamentId: tournament.id, email: payload.email });
-      res.status(201).json({ token, tournament });
+      const userId = crypto.randomUUID();
+      db.prepare('INSERT INTO users (id, email, google_id) VALUES (?, ?, ?)').run(userId, payload.email, payload.sub);
+      const token = signSession({ sub: userId, email: payload.email });
+      res.status(201).json({ token });
       return;
     }
 
-    const token = signSession({ sub: user.id, tournamentId: user.tournament_id, email: user.email });
-    res.json({ token, tournament: tournamentForUser(user.tournament_id) });
+    const token = signSession({ sub: user.id, email: user.email });
+    res.json({ token });
   } catch (err) {
     // Same TOCTOU window as /register (and here also possible on the
     // google_id UNIQUE column, e.g. two concurrent first-time sign-ins).
@@ -290,11 +242,11 @@ authRouter.post('/reset-password', loginLimiter, async (req, res) => {
   }
 });
 
-authRouter.get('/me', requireAuth, (req, res) => {
+authRouter.get('/me', requireUserAuth, (req, res) => {
   const user = getDb().prepare('SELECT email FROM users WHERE id = ?').get(req.userId) as { email: string } | undefined;
   if (!user) {
     res.status(404).json({ error: 'not_found' });
     return;
   }
-  res.json({ email: user.email, tournament: tournamentForUser(req.tournamentId) });
+  res.json({ email: user.email });
 });

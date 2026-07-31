@@ -6,38 +6,69 @@ export interface TournamentInfo {
   id: string;
   name: string;
   slug: string;
+  eventDate: string | null;
+  location: string | null;
+  description: string | null;
+  status: 'draft' | 'published' | 'archived';
 }
 
+export interface PublicTournamentSummary {
+  id: string;
+  name: string;
+  slug: string;
+  eventDate: string | null;
+  location: string | null;
+}
+
+// Two tokens: a "user-token" identifies the organizer's account (from
+// login/register) and is used to list/create/select tournaments; a
+// "session-token" is minted per-tournament (create/select) and scopes every
+// existing tournament-owned endpoint exactly as before. An account can own
+// many tournaments, so these can't be collapsed into one token.
+const USER_TOKEN_KEY = 'bjj_user_token';
 const SESSION_TOKEN_KEY = 'bjj_session_token';
 
-export function getSessionToken(): string {
+function readToken(key: string): string {
   try {
-    return localStorage.getItem(SESSION_TOKEN_KEY) || '';
+    return localStorage.getItem(key) || '';
   } catch {
     return '';
   }
 }
 
-export function setSessionToken(token: string): void {
+function writeToken(key: string, token: string): void {
   try {
-    localStorage.setItem(SESSION_TOKEN_KEY, token);
+    localStorage.setItem(key, token);
   } catch {
     /* ignore */
   }
 }
 
-export function clearSessionToken(): void {
+function removeToken(key: string): void {
   try {
-    localStorage.removeItem(SESSION_TOKEN_KEY);
+    localStorage.removeItem(key);
   } catch {
     /* ignore */
   }
 }
 
-async function rawRequest<T>(method: string, path: string, body: unknown, withAuth: boolean): Promise<ApiResult<T>> {
+export function getUserToken(): string { return readToken(USER_TOKEN_KEY); }
+export function setUserToken(token: string): void { writeToken(USER_TOKEN_KEY, token); }
+export function clearUserToken(): void { removeToken(USER_TOKEN_KEY); }
+
+export function getSessionToken(): string { return readToken(SESSION_TOKEN_KEY); }
+export function setSessionToken(token: string): void { writeToken(SESSION_TOKEN_KEY, token); }
+export function clearSessionToken(): void { removeToken(SESSION_TOKEN_KEY); }
+
+type AuthMode = 'none' | 'user' | 'tournament';
+
+async function rawRequest<T>(method: string, path: string, body: unknown, authMode: AuthMode): Promise<ApiResult<T>> {
   try {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (withAuth) {
+    if (authMode === 'user') {
+      const token = getUserToken();
+      if (token) headers.Authorization = `Bearer ${token}`;
+    } else if (authMode === 'tournament') {
       const token = getSessionToken();
       if (token) headers.Authorization = `Bearer ${token}`;
     }
@@ -66,27 +97,40 @@ async function rawRequest<T>(method: string, path: string, body: unknown, withAu
   }
 }
 
+// Tournament-scoped (existing behavior, unchanged) — every /api/competitors,
+// /api/matches, /api/timer-config, /api/registrations, /api/import, /api/reset call.
 function request<T>(method: string, path: string, body?: unknown): Promise<ApiResult<T>> {
-  return rawRequest<T>(method, path, body, true);
+  return rawRequest<T>(method, path, body, 'tournament');
+}
+
+// User-scoped — /api/auth/me and /api/tournaments (list/create/select/patch).
+function userRequest<T>(method: string, path: string, body?: unknown): Promise<ApiResult<T>> {
+  return rawRequest<T>(method, path, body, 'user');
 }
 
 function publicRequest<T>(method: string, path: string, body?: unknown): Promise<ApiResult<T>> {
-  return rawRequest<T>(method, path, body, false);
+  return rawRequest<T>(method, path, body, 'none');
 }
 
 export const api = {
-  // --- Auth ---
-  register: (email: string, password: string, tournamentName: string) =>
-    request<{ token: string; tournament: TournamentInfo }>('POST', '/auth/register', { email, password, tournamentName }),
-  login: (email: string, password: string) =>
-    request<{ token: string; tournament: TournamentInfo }>('POST', '/auth/login', { email, password }),
-  loginWithGoogle: (credential: string, tournamentName?: string) =>
-    request<{ token: string; tournament: TournamentInfo }>('POST', '/auth/google', { credential, tournamentName }),
-  forgotPassword: (email: string) => request<{ ok: true; devResetToken?: string }>('POST', '/auth/forgot-password', { email }),
-  resetPassword: (token: string, newPassword: string) => request<{ ok: true }>('POST', '/auth/reset-password', { token, newPassword }),
-  me: () => request<{ email: string; tournament: TournamentInfo }>('GET', '/auth/me'),
+  // --- Account (user-token) ---
+  register: (email: string, password: string) => publicRequest<{ token: string }>('POST', '/auth/register', { email, password }),
+  login: (email: string, password: string) => publicRequest<{ token: string }>('POST', '/auth/login', { email, password }),
+  loginWithGoogle: (credential: string) => publicRequest<{ token: string }>('POST', '/auth/google', { credential }),
+  forgotPassword: (email: string) => publicRequest<{ ok: true; devResetToken?: string }>('POST', '/auth/forgot-password', { email }),
+  resetPassword: (token: string, newPassword: string) => publicRequest<{ ok: true }>('POST', '/auth/reset-password', { token, newPassword }),
+  me: () => userRequest<{ email: string }>('GET', '/auth/me'),
 
-  // --- Organizer (authenticated, tournament-scoped server-side) ---
+  // --- Tournaments (user-token) — an account can own many ---
+  listTournaments: () => userRequest<TournamentInfo[]>('GET', '/tournaments'),
+  createTournament: (data: { name: string; eventDate?: string; location?: string; description?: string }) =>
+    userRequest<{ token: string; tournament: TournamentInfo }>('POST', '/tournaments', data),
+  selectTournament: (id: string) => userRequest<{ token: string; tournament: TournamentInfo }>('POST', `/tournaments/${id}/select`),
+  updateTournament: (id: string, patch: Partial<{ name: string; eventDate: string | null; location: string | null; description: string | null; status: TournamentInfo['status'] }>) =>
+    userRequest<TournamentInfo>('PATCH', `/tournaments/${id}`, patch),
+
+  // --- Organizer (session-token, tournament-scoped server-side) ---
+  getCurrentTournament: () => request<TournamentInfo>('GET', '/tournament'),
   getCompetitors: () => request<Competitor[]>('GET', '/competitors'),
   createCompetitor: (c: Competitor) => request<Competitor>('POST', '/competitors', c),
   patchCompetitor: (id: string, patch: Partial<Pick<Competitor, 'madeWeight' | 'isAbsolute' | 'weight'>>) =>
@@ -116,6 +160,7 @@ export const api = {
 // --- Public (no session, tournament identified by slug in the URL) ---
 // Used by the athlete self-registration page and the TV scoreboard display.
 export const publicApi = {
+  getPublicTournaments: () => publicRequest<PublicTournamentSummary[]>('GET', '/public/tournaments'),
   getCompetitors: (slug: string) => publicRequest<Competitor[]>('GET', `/public/${slug}/competitors`),
   getMatches: (slug: string) => publicRequest<Match[]>('GET', `/public/${slug}/matches`),
   getTimerConfig: (slug: string) => publicRequest<TimerConfig>('GET', `/public/${slug}/timer-config`),

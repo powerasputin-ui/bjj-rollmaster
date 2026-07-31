@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { createTestTournament } from './helpers/testTournament';
+import { createTestTournament, signInAsTestTournament } from './helpers/testTournament';
 
 test.describe('Self-registration and moderation', () => {
   test('athlete submits a public registration request', async ({ page, request }) => {
@@ -27,7 +27,7 @@ test.describe('Self-registration and moderation', () => {
     await expect(page.locator('text=/Request submitted|Заявка отправлена/i')).toBeVisible({ timeout: 5000 });
 
     // Organizer session: authenticate with this tournament's real session token.
-    await page.addInitScript((token) => localStorage.setItem('bjj_session_token', token), tournament.token);
+    await signInAsTestTournament(page, tournament);
     await page.goto('/');
 
     await page.getByTitle(/Requests|Заявки/i).click();
@@ -51,7 +51,7 @@ test.describe('Self-registration and moderation', () => {
     await page.getByRole('button', { name: /Submit Request|Отправить заявку/i }).click();
     await expect(page.locator('text=/Request submitted|Заявка отправлена/i')).toBeVisible({ timeout: 5000 });
 
-    await page.addInitScript((token) => localStorage.setItem('bjj_session_token', token), tournamentB.token);
+    await signInAsTestTournament(page, tournamentB);
     await page.goto('/');
     await page.getByTitle(/Requests|Заявки/i).click();
     await expect(page.locator('text=Isolation Test Athlete')).toHaveCount(0);

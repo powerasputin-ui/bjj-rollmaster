@@ -17,6 +17,17 @@ function resolveTournamentId(slug: string): string | undefined {
   return row?.id;
 }
 
+// Public catalog — the athlete-facing home page browses this to find a
+// tournament to register for, instead of needing a private link.
+publicRouter.get('/tournaments', (_req, res) => {
+  const rows = getDb()
+    .prepare(
+      "SELECT id, name, slug, event_date, location FROM tournaments WHERE status = 'published' ORDER BY (event_date IS NULL) ASC, event_date ASC"
+    )
+    .all() as { id: string; name: string; slug: string; event_date: string | null; location: string | null }[];
+  res.json(rows.map(r => ({ id: r.id, name: r.name, slug: r.slug, eventDate: r.event_date, location: r.location })));
+});
+
 publicRouter.param('slug', (req, res, next, slug) => {
   const tournamentId = resolveTournamentId(slug);
   if (!tournamentId) {

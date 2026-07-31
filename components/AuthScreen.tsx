@@ -1,7 +1,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import type { TranslationKeys } from '../translations';
-import { api, type TournamentInfo } from '../services/api';
+import { api } from '../services/api';
 import LiquidBackground from './LiquidBackground';
 
 type Mode = 'login' | 'register' | 'forgot' | 'reset';
@@ -9,7 +9,7 @@ type Mode = 'login' | 'register' | 'forgot' | 'reset';
 interface AuthScreenProps {
   t: TranslationKeys;
   initialResetToken?: string | null;
-  onAuthenticated: (token: string, tournament: TournamentInfo) => void;
+  onAuthenticated: (token: string) => void;
 }
 
 const ERROR_KEYS: Record<string, keyof TranslationKeys> = {
@@ -22,7 +22,6 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ t, initialResetToken, onAuthent
   const [mode, setMode] = useState<Mode>(initialResetToken ? 'reset' : 'login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [tournamentName, setTournamentName] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -40,15 +39,10 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ t, initialResetToken, onAuthent
     setError(null);
     setInfo(null);
     setLoading(true);
-    const result = await api.loginWithGoogle(credential, mode === 'register' ? tournamentName.trim() : undefined);
+    const result = await api.loginWithGoogle(credential);
     setLoading(false);
     if (result.ok === true) {
-      onAuthenticated(result.data.token, result.data.tournament);
-      return;
-    }
-    if (result.error === 'tournament_name_required') {
-      setMode('register');
-      setInfo(t.authTournamentName + '?');
+      onAuthenticated(result.data.token);
       return;
     }
     showError(result.error);
@@ -74,16 +68,16 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ t, initialResetToken, onAuthent
     setLoading(true);
     const result = await api.login(email.trim(), password);
     setLoading(false);
-    if (result.ok === true) onAuthenticated(result.data.token, result.data.tournament);
+    if (result.ok === true) onAuthenticated(result.data.token);
     else showError(result.error);
   };
 
   const submitRegister = async () => {
     setError(null);
     setLoading(true);
-    const result = await api.register(email.trim(), password, tournamentName.trim());
+    const result = await api.register(email.trim(), password);
     setLoading(false);
-    if (result.ok === true) onAuthenticated(result.data.token, result.data.tournament);
+    if (result.ok === true) onAuthenticated(result.data.token);
     else showError(result.error);
   };
 
@@ -149,9 +143,6 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ t, initialResetToken, onAuthent
             <div className="w-full flex flex-col gap-3">
               <input placeholder={t.authEmail as string} type="email" value={email} onChange={e => setEmail(e.target.value)} className={inputClass} />
               <input placeholder={t.authPassword as string} type="password" value={password} onChange={e => setPassword(e.target.value)} className={inputClass} />
-              {mode === 'register' && (
-                <input placeholder={t.authTournamentName as string} value={tournamentName} onChange={e => setTournamentName(e.target.value)} className={inputClass} />
-              )}
               {mode === 'login' && (
                 <div className="text-right">
                   <button onClick={() => { setMode('forgot'); setError(null); setInfo(null); }} className="text-xs font-medium text-gray-400 hover:text-white">

@@ -6,27 +6,38 @@
 // tournament-owned table now requires tournament_id. There is no migration
 // path from the old single-tenant schema — delete the dev DB file (DB_PATH)
 // before running against this schema for the first time.
+//
+// One user can now own many tournaments (Smoothcomp-style: organizer account
+// is separate from any one event) — tournaments reference their owner via
+// owner_user_id instead of users referencing a single tournament_id.
 export const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
-
-CREATE TABLE IF NOT EXISTS tournaments (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  slug TEXT NOT NULL UNIQUE,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
 
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   email TEXT NOT NULL UNIQUE,
   password_hash TEXT,
   google_id TEXT UNIQUE,
-  tournament_id TEXT NOT NULL REFERENCES tournaments(id),
   reset_token TEXT,
   reset_token_expires TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS tournaments (
+  id TEXT PRIMARY KEY,
+  owner_user_id TEXT NOT NULL REFERENCES users(id),
+  name TEXT NOT NULL,
+  slug TEXT NOT NULL UNIQUE,
+  event_date TEXT,
+  location TEXT,
+  description TEXT,
+  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','published','archived')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_tournaments_owner ON tournaments(owner_user_id);
+CREATE INDEX IF NOT EXISTS idx_tournaments_status_date ON tournaments(status, event_date);
 
 CREATE INDEX IF NOT EXISTS idx_users_reset_token ON users(reset_token);
 
